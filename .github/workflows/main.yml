@@ -1,0 +1,42 @@
+name: Build Taxi Driver AAB
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract Android Project
+        run: |
+          unzip -o TaxiDriver_PlayStore_Project-1.zip
+          cd TaxiDriver_PlayStore_Project
+          chmod +x gradlew 2>/dev/null || true
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build AAB
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          chmod +x gradlew
+          ./gradlew bundleRelease
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Taxi-Driver-AAB
+          path: TaxiDriver_PlayStore_Project/app/build/outputs/bundle/release/*.aab
