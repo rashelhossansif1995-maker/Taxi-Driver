@@ -36,7 +36,22 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n[:space:]' | base64 --decode > "$GITHUB_WORKSPACE/upload-keystore.jks"
+          python3 - <<'PY'
+          import os
+          import base64
+          import re
+          from pathlib import Path
+
+          value = os.environ["KEYSTORE_BASE64"]
+          value = re.sub(r"[^A-Za-z0-9+/=]", "", value)
+          value += "=" * ((4 - len(value) % 4) % 4)
+
+          data = base64.b64decode(value)
+          Path(os.environ["GITHUB_WORKSPACE"], "upload-keystore.jks").write_bytes(data)
+
+          print("Keystore decoded successfully.")
+          print(f"Keystore size: {len(data)} bytes")
+          PY
 
       - name: Configure release signing
         working-directory: TaxiDriver_PlayStore_Project
