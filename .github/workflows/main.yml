@@ -11,32 +11,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract Android Project
+      - name: Extract Android project
         run: |
-          unzip -o TaxiDriver_PlayStore_Project-1.zip
-          cd TaxiDriver_PlayStore_Project
-          chmod +x gradlew 2>/dev/null || true
+          unzip -o TaxiDriver_PlayStore_Project-1.zip -d .
 
-      - name: Setup Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build AAB
-        working-directory: TaxiDriver_PlayStore_Project
-        run: |
-          chmod +x gradlew
-          ./gradlew bundleRelease
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
 
-      - name: Upload AAB
+      - name: Build release AAB
+        working-directory: TaxiDriver_PlayStore_Project
+        run: gradle bundleRelease --no-daemon
+
+      - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: Taxi-Driver-AAB
           path: TaxiDriver_PlayStore_Project/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
