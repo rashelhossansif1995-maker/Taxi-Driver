@@ -31,7 +31,11 @@ jobs:
           s = p.read_text()
 
           s = re.sub(r'versionCode\s+\d+', 'versionCode 3', s)
-          s = re.sub(r'versionName\s+[\'"][^\'"]+[\'"]', 'versionName "1.0.2"', s)
+          s = re.sub(
+              r'versionName\s+[\'"][^\'"]+[\'"]',
+              'versionName "1.0.2"',
+              s
+          )
 
           p.write_text(s)
 
@@ -84,6 +88,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path("app/build.gradle")
           s = p.read_text()
@@ -105,7 +110,24 @@ jobs:
                   signing + "\nbuildTypes {"
               )
 
+          # Make sure release build is actually signed
+          if "signingConfig signingConfigs.release" not in s:
+              s = re.sub(
+                  r'(release\s*\{)',
+                  r'\1\n            signingConfig signingConfigs.release',
+                  s,
+                  count=1
+              )
+
           p.write_text(s)
+
+          print("Release signing configured.")
+          print("Release signingConfig attached.")
+
+          print("\n--- build.gradle signing check ---")
+          for line in s.splitlines():
+              if "signingConfig" in line:
+                  print(line)
           PY
 
       - name: Build signed release AAB
@@ -116,6 +138,11 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           gradle bundleRelease --no-daemon
+
+      - name: Verify AAB exists
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          ls -lh app/build/outputs/bundle/release/*.aab
 
       - name: Upload signed AAB artifact
         uses: actions/upload-artifact@v4
