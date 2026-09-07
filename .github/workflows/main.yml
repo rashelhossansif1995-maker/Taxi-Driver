@@ -21,7 +21,7 @@ jobs:
       - name: Update HTML and version
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          cp ../Taxi_Driver_Commission_CleanMoney_Final_CalculationFixed_Final.html app/src/main/assets/index.html
+          cp ../Taxi_Driver_SafeArea_1.0.2.html app/src/main/assets/index.html
 
           python3 - <<'PY'
           from pathlib import Path
@@ -30,14 +30,23 @@ jobs:
           p = Path("app/build.gradle")
           s = p.read_text()
 
-          s = re.sub(r'versionCode\s+\d+', 'versionCode 2', s)
-          s = re.sub(r'versionName\s+["\'][^"\']+["\']', 'versionName "1.0.1"', s)
+          s = re.sub(
+              r'versionCode\s+\d+',
+              'versionCode 3',
+              s
+          )
+
+          s = re.sub(
+              r'versionName\s+[\'"][^\'"]+[\'"]',
+              'versionName "1.0.2"',
+              s
+          )
 
           p.write_text(s)
 
           print("HTML updated successfully.")
-          print("Version Code: 2")
-          print("Version Name: 1.0.1")
+          print("Version Code: 3")
+          print("Version Name: 1.0.2")
           PY
 
       - name: Set up Java 17
@@ -65,12 +74,21 @@ jobs:
           from pathlib import Path
 
           value = os.environ["KEYSTORE_BASE64"]
-          value = re.sub(r"[^A-Za-z0-9+/=]", "", value)
+
+          value = re.sub(
+              r"[^A-Za-z0-9+/=]",
+              "",
+              value
+          )
+
           value += "=" * ((4 - len(value) % 4) % 4)
 
           data = base64.b64decode(value)
 
-          Path(os.environ["GITHUB_WORKSPACE"], "upload-keystore.jks").write_bytes(data)
+          Path(
+              os.environ["GITHUB_WORKSPACE"],
+              "upload-keystore.jks"
+          ).write_bytes(data)
 
           print("Keystore decoded successfully.")
           print(f"Keystore size: {len(data)} bytes")
@@ -104,12 +122,30 @@ jobs:
 
           s = s.replace(
               "buildTypes {",
-              "buildTypes {\n        release { signingConfig signingConfigs.release }\n",
+              """buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+""",
               1
           )
 
           p.write_text(s)
           PY
+
+      - name: Verify version and HTML
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          echo "Checking Android version..."
+
+          grep -n "versionCode" app/build.gradle
+          grep -n "versionName" app/build.gradle
+
+          echo "Checking HTML..."
+
+          test -f app/src/main/assets/index.html
+
+          echo "HTML file found successfully."
 
       - name: Build signed release AAB
         working-directory: TaxiDriver_PlayStore_Project
