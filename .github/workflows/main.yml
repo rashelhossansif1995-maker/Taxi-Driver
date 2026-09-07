@@ -18,6 +18,28 @@ jobs:
         run: |
           unzip -o TaxiDriver_PlayStore_Project-1.zip -d .
 
+      - name: Update HTML and version
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          cp ../Taxi_Driver_Commission_CleanMoney_Final_CalculationFixed_Final.html app/src/main/assets/index.html
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("app/build.gradle")
+          s = p.read_text()
+
+          s = re.sub(r'versionCode\s+\d+', 'versionCode 2', s)
+          s = re.sub(r'versionName\s+["\'][^"\']+["\']', 'versionName "1.0.1"', s)
+
+          p.write_text(s)
+
+          print("HTML updated successfully.")
+          print("Version Code: 2")
+          print("Version Name: 1.0.1")
+          PY
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -47,6 +69,7 @@ jobs:
           value += "=" * ((4 - len(value) % 4) % 4)
 
           data = base64.b64decode(value)
+
           Path(os.environ["GITHUB_WORKSPACE"], "upload-keystore.jks").write_bytes(data)
 
           print("Keystore decoded successfully.")
@@ -73,10 +96,16 @@ jobs:
           }
           '''
 
-          s = s.replace("    buildTypes {", signing + "\n    buildTypes {")
+          if "signingConfigs {" not in s:
+              s = s.replace(
+                  "buildTypes {",
+                  signing + "\nbuildTypes {"
+              )
+
           s = s.replace(
-              "    buildTypes {\n        release {",
-              "    buildTypes {\n        release {\n            signingConfig signingConfigs.release"
+              "buildTypes {",
+              "buildTypes {\n        release { signingConfig signingConfigs.release }\n",
+              1
           )
 
           p.write_text(s)
@@ -88,7 +117,8 @@ jobs:
           KEYSTORE_FILE: ${{ github.workspace }}/upload-keystore.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: gradle bundleRelease --no-daemon
+        run: |
+          gradle bundleRelease --no-daemon
 
       - name: Upload signed AAB artifact
         uses: actions/upload-artifact@v4
