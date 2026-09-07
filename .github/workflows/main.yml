@@ -111,3 +111,15 @@ jobs:
       - name: Build signed release AAB
         working-directory: TaxiDriver_PlayStore_Project
         env:
+KEYSTORE_FILE: ${{ github.workspace }}/upload-keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          gradle bundleRelease --no-daemon
+
+      - name: Upload signed AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Taxi-Driver-Signed-AAB
+          path: TaxiDriver_PlayStore_Project/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
