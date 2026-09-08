@@ -12,7 +12,7 @@ jobs:
 
     steps:
 
-      # 1. Checkout repository
+      # 1. Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -22,52 +22,19 @@ jobs:
           rm -rf TaxiDriver_PlayStore_Project
           unzip -o TaxiDriver_PlayStore_Project-1.zip
 
-          echo "Android project extracted successfully."
+          echo "Project extracted successfully."
 
-      # 3. Check project structure
-      - name: Check project structure
-        working-directory: TaxiDriver_PlayStore_Project
-        run: |
-          echo "======================================"
-          echo "PROJECT STRUCTURE"
-          echo "======================================"
-
-          pwd
-
-          echo ""
-          echo "Project files:"
-          ls -la
-
-          echo ""
-          echo "App directory:"
-          ls -la app
-
-          echo ""
-          echo "Source directory:"
-          ls -la app/src || true
-
-          echo ""
-          echo "Build Gradle:"
-          ls -lh app/build.gradle
-
-      # 4. Update HTML and version
+      # 3. Update HTML and version
       - name: Update HTML and version
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          echo "======================================"
-          echo "UPDATING HTML AND VERSION"
-          echo "======================================"
-
-          # Create assets directory
           mkdir -p app/src/main/assets
 
-          # Copy latest HTML
           cp ../Taxi_Driver_SafeArea_1.3.2_Settings_Clean.html \
              app/src/main/assets/index.html
 
           echo "HTML copied successfully."
 
-          # Update version
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -79,14 +46,12 @@ jobs:
 
           s = p.read_text()
 
-          # Version Code
           s = re.sub(
               r'versionCode\s+\d+',
               'versionCode 4',
               s
           )
 
-          # Version Name
           s = re.sub(
               r'versionName\s+[\'"][^\'"]+[\'"]',
               'versionName "1.0.3"',
@@ -95,183 +60,165 @@ jobs:
 
           p.write_text(s)
 
-          print("================================")
-          print("VERSION UPDATED")
           print("Version Code : 4")
           print("Version Name : 1.0.3")
-          print("================================")
           PY
 
-      # 5. Verify HTML
-      - name: Verify HTML
+      # 4. Verify project
+      - name: Verify project
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          echo "======================================"
-          echo "VERIFYING HTML"
-          echo "======================================"
-
-          if [ ! -f app/src/main/assets/index.html ]; then
-            echo "ERROR: index.html not found"
-            exit 1
-          fi
-
-          echo "HTML file exists."
-
-          echo ""
-          echo "HTML file size:"
-          wc -c app/src/main/assets/index.html
-
-      # 6. Verify package and version
-      - name: Verify package and version
-        working-directory: TaxiDriver_PlayStore_Project
-        run: |
-          echo "======================================"
-          echo "VERIFYING PACKAGE AND VERSION"
-          echo "======================================"
-
-          echo ""
           echo "Package:"
-          grep -R "com.taxidriver.apk" app/build.gradle || true
+          grep -n "applicationId" app/build.gradle
 
-          echo ""
-          echo "Version Code:"
-          grep -R "versionCode" app/build.gradle || true
+          echo "Version:"
+          grep -n "versionCode" app/build.gradle
+          grep -n "versionName" app/build.gradle
 
-          echo ""
-          echo "Version Name:"
-          grep -R "versionName" app/build.gradle || true
+          echo "HTML:"
+          test -f app/src/main/assets/index.html
+          echo "index.html OK"
 
-      # 7. Setup Java 17
+      # 5. Setup Java
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # 8. Setup Android SDK
+      # 6. Setup Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 9. Install Android SDK components
+      # 7. Install Android SDK
       - name: Install Android SDK components
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-36"
           sdkmanager "build-tools;36.0.0"
 
-          echo "Android SDK components installed."
-
-      # 10. Setup Gradle 8.11.1
-      - name: Setup Gradle 8.11.1
+      # 8. Setup Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
-      # 11. Check Gradle
+      # 9. Check Gradle
       - name: Check Gradle
         run: |
-          echo "======================================"
-          echo "GRADLE VERSION"
-          echo "======================================"
-
           gradle --version
 
-      # 12. Decode signing keystore
+      # 10. Decode existing signing key
       - name: Decode signing keystore
         working-directory: TaxiDriver_PlayStore_Project
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "======================================"
-          echo "CREATING SIGNING KEYSTORE"
-          echo "======================================"
-
-          mkdir -p app
-
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > app/taxi-driver-release.jks
 
-          echo "Keystore created successfully."
+          test -s app/taxi-driver-release.jks
 
-      # 13. Verify signing keystore
-      - name: Verify signing keystore
-        working-directory: TaxiDriver_PlayStore_Project
-        run: |
-          echo "======================================"
-          echo "VERIFYING KEYSTORE"
-          echo "======================================"
+          echo "Existing signing keystore loaded."
 
-          if [ ! -f app/taxi-driver-release.jks ]; then
-            echo "ERROR: Signing keystore not found."
-            exit 1
-          fi
-
-          echo "Signing keystore exists."
-
-          ls -lh app/taxi-driver-release.jks
-
-      # 14. Clean project
+      # 11. Clean
       - name: Clean project
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          echo "======================================"
-          echo "CLEANING PROJECT"
-          echo "======================================"
-
           gradle clean --stacktrace
 
-      # 15. Build signed Release AAB
-      - name: Build signed Release AAB
+      # 12. Build unsigned Release AAB
+      - name: Build Release AAB
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          gradle bundleRelease --stacktrace
+
+      # 13. Find AAB
+      - name: Find generated AAB
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          echo "Generated AAB files:"
+          find app/build/outputs/bundle -type f -name "*.aab" -print
+
+      # 14. Sign AAB
+      - name: Sign AAB with existing upload key
         working-directory: TaxiDriver_PlayStore_Project
         env:
-          KEYSTORE_FILE: ${{ github.workspace }}/TaxiDriver_PlayStore_Project/app/taxi-driver-release.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           echo "======================================"
-          echo "BUILDING SIGNED RELEASE AAB"
+          echo "SIGNING RELEASE AAB"
           echo "======================================"
 
-          gradle bundleRelease --stacktrace
+          AAB_FILE=$(find app/build/outputs/bundle -type f -name "*.aab" | head -n 1)
 
-      # 16. Find generated AAB
-      - name: Find generated AAB
+          if [ -z "$AAB_FILE" ]; then
+            echo "ERROR: AAB not found."
+            exit 1
+          fi
+
+          echo "AAB found:"
+          echo "$AAB_FILE"
+
+          jarsigner \
+            -verbose \
+            -sigalg SHA256withRSA \
+            -digestalg SHA-256 \
+            -keystore app/taxi-driver-release.jks \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            "$AAB_FILE" \
+            "$KEY_ALIAS"
+
+          echo ""
+          echo "AAB signing completed."
+
+      # 15. Verify AAB signature
+      - name: Verify AAB signature
         working-directory: TaxiDriver_PlayStore_Project
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
+          AAB_FILE=$(find app/build/outputs/bundle -type f -name "*.aab" | head -n 1)
+
+          if [ -z "$AAB_FILE" ]; then
+            echo "ERROR: AAB not found."
+            exit 1
+          fi
+
           echo "======================================"
-          echo "SEARCHING FOR AAB"
+          echo "VERIFYING AAB SIGNATURE"
           echo "======================================"
 
-          find . -type f -name "*.aab" -print
+          jarsigner -verify -verbose -certs "$AAB_FILE"
 
-      # 17. Prepare release AAB
+          echo ""
+          echo "AAB signature verification completed."
+
+      # 16. Prepare release
       - name: Prepare release AAB
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          echo "======================================"
-          echo "PREPARING RELEASE AAB"
-          echo "======================================"
-
           mkdir -p release
 
           AAB_FILE=$(find app/build/outputs/bundle -type f -name "*.aab" | head -n 1)
 
           if [ -z "$AAB_FILE" ]; then
-            echo "ERROR: AAB file not found."
+            echo "ERROR: AAB not found."
             exit 1
           fi
 
-          echo "Generated AAB:"
-          echo "$AAB_FILE"
-
           cp "$AAB_FILE" release/Taxi-Driver-1.0.3.aab
 
-          echo ""
-          echo "Final AAB:"
+          echo "======================================"
+          echo "FINAL AAB"
+          echo "======================================"
+
           ls -lh release/Taxi-Driver-1.0.3.aab
 
-      # 18. Upload AAB artifact
+      # 17. Upload artifact
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
@@ -279,12 +226,12 @@ jobs:
           path: TaxiDriver_PlayStore_Project/release/Taxi-Driver-1.0.3.aab
           if-no-files-found: error
 
-      # 19. Build summary
+      # 18. Build summary
       - name: Build summary
         run: |
           echo ""
           echo "======================================"
-          echo "       TAXI DRIVER BUILD SUCCESS"
+          echo "TAXI DRIVER BUILD SUCCESS"
           echo "======================================"
           echo ""
           echo "App Name     : Taxi Driver"
@@ -292,6 +239,7 @@ jobs:
           echo "Version Code : 4"
           echo "Version Name : 1.0.3"
           echo "Target API   : 36"
-          echo "AAB File     : Taxi-Driver-1.0.3.aab"
+          echo "Signed       : YES"
+          echo "AAB          : Taxi-Driver-1.0.3.aab"
           echo ""
           echo "======================================"
