@@ -30,16 +30,14 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      # 5. Extract project
-      - name: Extract Taxi Driver project
+      # 5. Extract Android project
+      - name: Extract Android project
         run: |
           unzip -o TaxiDriver_PlayStore_Project-1.zip
-          cd TaxiDriver_PlayStore_Project
-          echo "Project extracted"
-          ls -la
+          echo "Project extracted successfully"
 
-      # 6. Put HTML into assets
-      - name: Prepare HTML
+      # 6. Prepare HTML
+      - name: Update HTML and version
         run: |
           cd TaxiDriver_PlayStore_Project
 
@@ -47,13 +45,6 @@ jobs:
 
           cp ../Taxi_Driver_SafeArea_1.3.2_Settings_Clean.html \
              app/src/main/assets/index.html
-
-          echo "HTML copied successfully"
-
-      # 7. Update version
-      - name: Update version to 1.0.3
-        run: |
-          cd TaxiDriver_PlayStore_Project
 
           python3 - <<'PY'
           from pathlib import Path
@@ -73,80 +64,117 @@ jobs:
 
           p.write_text(s)
 
-          print("Version updated:")
-          print("versionCode = 4")
-          print("versionName = 1.0.3")
+          print("Version updated to:")
+          print("versionCode 4")
+          print("versionName 1.0.3")
           PY
 
           grep -n "versionCode\|versionName" app/build.gradle
 
-      # 8. Decode existing keystore
-      - name: Decode existing signing keystore
+      # 7. Verify project
+      - name: Verify project
+        run: |
+          cd TaxiDriver_PlayStore_Project
+
+          echo "Checking project..."
+          test -f app/src/main/assets/index.html
+          test -f app/build.gradle
+
+          echo "Project verification successful"
+
+      # 8. Decode EXISTING keystore
+      - name: Decode signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > taxi-driver.keystore
 
-          echo "Keystore created:"
+          test -s taxi-driver.keystore
+
+          echo "Existing keystore decoded successfully"
           ls -lh taxi-driver.keystore
 
-      # 9. Check existing key
-      - name: Check existing signing key
+      # 9. Automatically find PrivateKeyEntry
+      - name: Find existing PrivateKey alias
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          echo "Checking existing keystore..."
+          echo "Inspecting existing keystore..."
 
           keytool -list \
+            -v \
             -keystore taxi-driver.keystore \
-            -storepass "$KEYSTORE_PASSWORD"
+            -storepass "$KEYSTORE_PASSWORD" > keystore-info.txt
 
-          echo ""
-          echo "Configured alias:"
-          echo "$KEY_ALIAS"
+          echo "Keystore entries:"
+          grep -E "Alias name:|Entry type:" keystore-info.txt || true
 
-      # 10. Build unsigned AAB
+          PRIVATE_ALIAS=$(awk '
+            /Alias name:/ {
+              alias=$0
+              sub(/^.*Alias name: /, "", alias)
+            }
+            /Entry type: PrivateKeyEntry/ {
+              print alias
+              exit
+            }
+          ' keystore-info.txt)
+
+          if [ -z "$PRIVATE_ALIAS" ]; then
+            echo "ERROR: No PrivateKeyEntry found."
+            exit 1
+          fi
+
+          echo "PrivateKeyEntry found successfully."
+
+          # Save alias for next steps
+          echo "PRIVATE_ALIAS=$PRIVATE_ALIAS" >> "$GITHUB_ENV"
+
+      # 10. Clean
+      - name: Clean project
+        run: |
+          cd TaxiDriver_PlayStore_Project
+          gradle clean
+
+      # 11. Build AAB
       - name: Build Release AAB
         run: |
           cd TaxiDriver_PlayStore_Project
 
-          gradle clean
+          echo "======================================"
+          echo "BUILDING RELEASE AAB"
+          echo "======================================"
 
           gradle bundleRelease
 
-      # 11. Find AAB
+      # 12. Find AAB
       - name: Find generated AAB
         run: |
-          echo "Searching for AAB..."
-
-          find TaxiDriver_PlayStore_Project \
-            -type f \
-            -name "*.aab" \
-            -print
-
-      # 12. Sign AAB with EXISTING key
-      - name: Sign AAB with existing key
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-
           AAB=$(find TaxiDriver_PlayStore_Project \
             -type f \
             -name "*.aab" \
             | head -n 1)
 
           if [ -z "$AAB" ]; then
-            echo "ERROR: AAB not found"
+            echo "ERROR: AAB not found."
             exit 1
           fi
 
           echo "AAB found:"
           echo "$AAB"
 
-          echo ""
-          echo "Signing with existing keystore..."
+          echo "AAB_PATH=$AAB" >> "$GITHUB_ENV"
+
+      # 13. Sign with EXISTING PrivateKey
+      - name: Sign AAB with existing private key
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          echo "======================================"
+          echo "SIGNING RELEASE AAB"
+          echo "======================================"
+
+          echo "Using existing PrivateKeyEntry."
 
           jarsigner \
             -verbose \
@@ -155,46 +183,40 @@ jobs:
             -keystore taxi-driver.keystore \
             -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEYSTORE_PASSWORD" \
-            "$AAB" \
-            "$KEY_ALIAS"
+            "$AAB_PATH" \
+            "$PRIVATE_ALIAS"
 
-          echo ""
-          echo "AAB signing completed."
+          echo "======================================"
+          echo "AAB SIGNING COMPLETED"
+          echo "======================================"
 
-      # 13. Verify signature
+      # 14. Verify signature
       - name: Verify AAB signature
         run: |
-
-          AAB=$(find TaxiDriver_PlayStore_Project \
-            -type f \
-            -name "*.aab" \
-            | head -n 1)
-
-          echo "Verifying:"
-          echo "$AAB"
+          echo "======================================"
+          echo "VERIFYING AAB SIGNATURE"
+          echo "======================================"
 
           jarsigner \
             -verify \
             -verbose \
             -certs \
-            "$AAB"
+            "$AAB_PATH"
 
-      # 14. Rename AAB
-      - name: Rename AAB
+          echo "======================================"
+          echo "SIGNATURE VERIFIED SUCCESSFULLY"
+          echo "======================================"
+
+      # 15. Prepare final AAB
+      - name: Prepare release AAB
         run: |
-
-          AAB=$(find TaxiDriver_PlayStore_Project \
-            -type f \
-            -name "*.aab" \
-            | head -n 1)
-
-          cp "$AAB" Taxi-Driver-1.0.3-Signed.aab
+          cp "$AAB_PATH" Taxi-Driver-1.0.3-Signed.aab
 
           echo "Final AAB:"
           ls -lh Taxi-Driver-1.0.3-Signed.aab
 
-      # 15. Upload signed AAB
-      - name: Upload Signed AAB
+      # 16. Upload artifact
+      - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: Taxi-Driver-1.0.3-Signed-AAB
