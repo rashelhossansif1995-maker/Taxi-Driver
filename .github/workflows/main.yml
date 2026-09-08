@@ -11,36 +11,70 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Extract Android project
       - name: Extract Android project
         run: |
           rm -rf TaxiDriver_PlayStore_Project
-          mkdir -p TaxiDriver_PlayStore_Project
-          unzip -o TaxiDriver_PlayStore_Project-1.zip -d TaxiDriver_PlayStore_Project
+          unzip -o TaxiDriver_PlayStore_Project-1.zip
+          echo "Android project extracted."
 
+      # 3. Check project
+      - name: Check project structure
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          echo "Current directory:"
+          pwd
+
+          echo ""
+          echo "Project files:"
+          ls -la
+
+          echo ""
+          echo "App directory:"
+          ls -la app || true
+
+          echo ""
+          echo "Build Gradle:"
+          ls -la app/build.gradle || true
+
+      # 4. Update HTML and version
       - name: Update HTML and version
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          cp ../Taxi_Driver_SafeArea_1.3.2_Settings_Clean.html app/src/main/assets/index.html
+          # Create assets folder if it does not exist
+          mkdir -p app/src/main/assets
 
+          # Copy latest Taxi Driver HTML
+          cp ../Taxi_Driver_SafeArea_1.3.2_Settings_Clean.html \
+             app/src/main/assets/index.html
+
+          echo "HTML copied successfully."
+
+          # Update Android version
           python3 - <<'PY'
           from pathlib import Path
           import re
 
           p = Path("app/build.gradle")
+
+          if not p.exists():
+              raise SystemExit("ERROR: app/build.gradle not found")
+
           s = p.read_text()
 
-          # Play Store update:
-          # 1.0.2 / versionCode 3 -> 1.0.3 / versionCode 4
-
+          # Version Code
           s = re.sub(
               r'versionCode\s+\d+',
               'versionCode 4',
               s
           )
 
+          # Version Name
           s = re.sub(
               r'versionName\s+[\'"][^\'"]+[\'"]',
               'versionName "1.0.3"',
@@ -49,85 +83,101 @@ jobs:
 
           p.write_text(s)
 
-          print("HTML updated successfully.")
-          print("Version Code: 4")
-          print("Version Name: 1.0.3")
+          print("================================")
+          print("Taxi Driver version updated")
+          print("Version Code : 4")
+          print("Version Name : 1.0.3")
+          print("================================")
           PY
 
+      # 5. Verify HTML
+      - name: Verify HTML
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          echo "Checking HTML file..."
+
+          test -f app/src/main/assets/index.html
+
+          echo "HTML file exists."
+
+          echo ""
+          echo "HTML size:"
+          wc -c app/src/main/assets/index.html
+
+      # 6. Verify package and version
       - name: Verify package and version
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          echo "Checking Android project..."
+          echo "Checking Android package..."
 
           grep -R "com.taxidriver.apk" app/build.gradle || true
+
+          echo ""
+          echo "Checking version..."
+
           grep -R "versionCode" app/build.gradle || true
           grep -R "versionName" app/build.gradle || true
 
-      - name: Set up Java 17
+      # 7. Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
+      # 8. Setup Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Set up Gradle 8.11.1
+      # 9. Install Android SDK components
+      - name: Install Android SDK components
+        run: |
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-36"
+          sdkmanager "build-tools;36.0.0"
+
+      # 10. Setup Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
+      # 11. Decode signing keystore
       - name: Decode signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        working-directory: TaxiDriver_PlayStore_Project
         run: |
-          python3 - <<'PY'
-          import os
-          import base64
-          import re
-          from pathlib import Path
+          mkdir -p app
 
-          value = os.environ.get("KEYSTORE_BASE64", "").strip()
+          echo "$KEYSTORE_BASE64" | base64 --decode \
+            > app/taxi-driver-release.jks
 
-          if not value:
-              raise SystemExit(
-                  "ERROR: KEYSTORE_BASE64 GitHub Secret is missing."
-              )
+          echo "Keystore created."
 
-          value = re.sub(r'[^A-Za-z0-9+/=]', '', value)
-
-          # Fix missing padding if necessary
-          value += "=" * ((4 - len(value) % 4) % 4)
-
-          data = base64.b64decode(value)
-
-          out = Path("TaxiDriver_PlayStore_Project/app/taxi-driver-release.jks")
-          out.parent.mkdir(parents=True, exist_ok=True)
-          out.write_bytes(data)
-
-          print("Keystore decoded successfully.")
-          print(f"Keystore path: {out}")
-          PY
-
+      # 12. Verify signing keystore
       - name: Verify signing keystore
+        working-directory: TaxiDriver_PlayStore_Project
         run: |
-          if [ ! -f "TaxiDriver_PlayStore_Project/app/taxi-driver-release.jks" ]; then
-            echo "ERROR: Keystore file was not created."
-            exit 1
-          fi
+          test -f app/taxi-driver-release.jks
 
-          echo "Keystore file found."
+          echo "Signing keystore exists."
 
+          ls -lh app/taxi-driver-release.jks
+
+      # 13. Make Gradle executable
       - name: Make Gradle executable
         working-directory: TaxiDriver_PlayStore_Project
         run: |
           chmod +x gradlew
 
+      # 14. Clean project
       - name: Clean project
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          ./gradlew clean
+          ./gradlew clean --stacktrace
 
+      # 15. Build signed Release AAB
       - name: Build signed Release AAB
         working-directory: TaxiDriver_PlayStore_Project
         env:
@@ -138,37 +188,53 @@ jobs:
         run: |
           ./gradlew bundleRelease --stacktrace
 
+      # 16. Find AAB
       - name: Find generated AAB
+        working-directory: TaxiDriver_PlayStore_Project
         run: |
           echo "Searching for AAB..."
 
-          find TaxiDriver_PlayStore_Project/app/build/outputs/bundle \
-            -type f \
-            -name "*.aab" \
-            -print
+          find . -type f -name "*.aab" -print
 
-      - name: Rename AAB
+      # 17. Prepare release file
+      - name: Prepare release AAB
+        working-directory: TaxiDriver_PlayStore_Project
         run: |
-          AAB=$(find TaxiDriver_PlayStore_Project/app/build/outputs/bundle \
-            -type f \
-            -name "*.aab" \
-            | head -n 1)
+          mkdir -p release
 
-          if [ -z "$AAB" ]; then
-            echo "ERROR: AAB file was not found."
+          AAB_FILE=$(find app/build/outputs/bundle -type f -name "*.aab" | head -n 1)
+
+          if [ -z "$AAB_FILE" ]; then
+            echo "ERROR: AAB file not found."
             exit 1
           fi
 
-          mkdir -p release
+          echo "Found AAB:"
+          echo "$AAB_FILE"
 
-          cp "$AAB" "release/Taxi-Driver-1.0.3.aab"
+          cp "$AAB_FILE" release/Taxi-Driver-1.0.3.aab
 
-          echo "AAB created:"
+          echo ""
+          echo "Release AAB created:"
           ls -lh release/Taxi-Driver-1.0.3.aab
 
-      - name: Upload signed AAB
+      # 18. Upload AAB artifact
+      - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: Taxi-Driver-1.0.3-AAB
-          path: release/Taxi-Driver-1.0.3.aab
+          path: TaxiDriver_PlayStore_Project/release/Taxi-Driver-1.0.3.aab
           if-no-files-found: error
+
+      # 19. Build summary
+      - name: Build summary
+        run: |
+          echo "======================================"
+          echo "Taxi Driver AAB BUILD SUCCESS"
+          echo "======================================"
+          echo "App Name     : Taxi Driver"
+          echo "Package Name : com.taxidriver.apk"
+          echo "Version Code : 4"
+          echo "Version Name : 1.0.3"
+          echo "AAB          : Taxi-Driver-1.0.3.aab"
+          echo "======================================"
