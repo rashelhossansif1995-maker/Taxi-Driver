@@ -16,12 +16,14 @@ jobs:
 
       - name: Extract Android project
         run: |
-          unzip -o TaxiDriver_PlayStore_Project-1.zip -d .
+          rm -rf TaxiDriver_PlayStore_Project
+          mkdir -p TaxiDriver_PlayStore_Project
+          unzip -o TaxiDriver_PlayStore_Project-1.zip -d TaxiDriver_PlayStore_Project
 
       - name: Update HTML and version
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          cp ../Taxi_Driver_SafeArea_1.0.2.html app/src/main/assets/index.html
+          cp ../Taxi_Driver_SafeArea_1.3.2_Settings_Clean.html app/src/main/assets/index.html
 
           python3 - <<'PY'
           from pathlib import Path
@@ -30,19 +32,36 @@ jobs:
           p = Path("app/build.gradle")
           s = p.read_text()
 
-          s = re.sub(r'versionCode\s+\d+', 'versionCode 3', s)
+          # Play Store update:
+          # 1.0.2 / versionCode 3 -> 1.0.3 / versionCode 4
+
+          s = re.sub(
+              r'versionCode\s+\d+',
+              'versionCode 4',
+              s
+          )
+
           s = re.sub(
               r'versionName\s+[\'"][^\'"]+[\'"]',
-              'versionName "1.0.2"',
+              'versionName "1.0.3"',
               s
           )
 
           p.write_text(s)
 
           print("HTML updated successfully.")
-          print("Version Code: 3")
-          print("Version Name: 1.0.2")
+          print("Version Code: 4")
+          print("Version Name: 1.0.3")
           PY
+
+      - name: Verify package and version
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          echo "Checking Android project..."
+
+          grep -R "com.taxidriver.apk" app/build.gradle || true
+          grep -R "versionCode" app/build.gradle || true
+          grep -R "versionName" app/build.gradle || true
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -68,90 +87,88 @@ jobs:
           import re
           from pathlib import Path
 
-          value = os.environ["KEYSTORE_BASE64"]
-          value = re.sub(r"[^A-Za-z0-9+/=]", "", value)
+          value = os.environ.get("KEYSTORE_BASE64", "").strip()
+
+          if not value:
+              raise SystemExit(
+                  "ERROR: KEYSTORE_BASE64 GitHub Secret is missing."
+              )
+
+          value = re.sub(r'[^A-Za-z0-9+/=]', '', value)
+
+          # Fix missing padding if necessary
           value += "=" * ((4 - len(value) % 4) % 4)
 
           data = base64.b64decode(value)
 
-          Path(
-              os.environ["GITHUB_WORKSPACE"],
-              "upload-keystore.jks"
-          ).write_bytes(data)
+          out = Path("TaxiDriver_PlayStore_Project/app/taxi-driver-release.jks")
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_bytes(data)
 
           print("Keystore decoded successfully.")
-          print(f"Keystore size: {len(data)} bytes")
+          print(f"Keystore path: {out}")
           PY
 
-      - name: Configure release signing
+      - name: Verify signing keystore
+        run: |
+          if [ ! -f "TaxiDriver_PlayStore_Project/app/taxi-driver-release.jks" ]; then
+            echo "ERROR: Keystore file was not created."
+            exit 1
+          fi
+
+          echo "Keystore file found."
+
+      - name: Make Gradle executable
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          chmod +x gradlew
 
-          p = Path("app/build.gradle")
-          s = p.read_text()
+      - name: Clean project
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          ./gradlew clean
 
-          signing = '''
-          signingConfigs {
-              release {
-                  storeFile file(System.getenv("KEYSTORE_FILE"))
-                  storePassword System.getenv("KEYSTORE_PASSWORD")
-                  keyAlias System.getenv("KEY_ALIAS")
-                  keyPassword System.getenv("KEYSTORE_PASSWORD")
-              }
-          }
-          '''
-
-          if "signingConfigs {" not in s:
-              s = s.replace(
-                  "buildTypes {",
-                  signing + "\nbuildTypes {",
-                  1
-              )
-
-          # Attach signing config to buildTypes > release
-          build_types_pos = s.find("buildTypes {")
-          release_pos = s.find("release {", build_types_pos)
-
-          if release_pos == -1:
-              raise RuntimeError(
-                  "Could not find release build type."
-              )
-
-          after_release = release_pos + len("release {")
-
-          if "signingConfig signingConfigs.release" not in s[
-              after_release:after_release + 200
-          ]:
-              s = (
-                  s[:after_release]
-                  + "\n            signingConfig signingConfigs.release"
-                  + s[after_release:]
-              )
-
-          p.write_text(s)
-
-          print("Release signing configured correctly.")
-          PY
-
-      - name: Build signed release AAB
+      - name: Build signed Release AAB
         working-directory: TaxiDriver_PlayStore_Project
         env:
-          KEYSTORE_FILE: ${{ github.workspace }}/upload-keystore.jks
+          KEYSTORE_FILE: ${{ github.workspace }}/TaxiDriver_PlayStore_Project/app/taxi-driver-release.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          gradle bundleRelease --no-daemon
+          ./gradlew bundleRelease --stacktrace
 
-      - name: Verify AAB exists
-        working-directory: TaxiDriver_PlayStore_Project
+      - name: Find generated AAB
         run: |
-          ls -lh app/build/outputs/bundle/release/*.aab
+          echo "Searching for AAB..."
 
-      - name: Upload signed AAB artifact
+          find TaxiDriver_PlayStore_Project/app/build/outputs/bundle \
+            -type f \
+            -name "*.aab" \
+            -print
+
+      - name: Rename AAB
+        run: |
+          AAB=$(find TaxiDriver_PlayStore_Project/app/build/outputs/bundle \
+            -type f \
+            -name "*.aab" \
+            | head -n 1)
+
+          if [ -z "$AAB" ]; then
+            echo "ERROR: AAB file was not found."
+            exit 1
+          fi
+
+          mkdir -p release
+
+          cp "$AAB" "release/Taxi-Driver-1.0.3.aab"
+
+          echo "AAB created:"
+          ls -lh release/Taxi-Driver-1.0.3.aab
+
+      - name: Upload signed AAB
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-Signed-AAB
-          path: TaxiDriver_PlayStore_Project/app/build/outputs/bundle/release/*.aab
+          name: Taxi-Driver-1.0.3-AAB
+          path: release/Taxi-Driver-1.0.3.aab
           if-no-files-found: error
