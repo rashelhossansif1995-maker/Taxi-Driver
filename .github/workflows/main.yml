@@ -12,7 +12,7 @@ jobs:
 
     steps:
 
-      # 1. Checkout
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -22,19 +22,48 @@ jobs:
           rm -rf TaxiDriver_PlayStore_Project
           unzip -o TaxiDriver_PlayStore_Project-1.zip
 
-          echo "Project extracted successfully."
+          echo "Android project extracted successfully."
 
-      # 3. Update HTML and version
+      # 3. Check project structure
+      - name: Check project structure
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          echo "======================================"
+          echo "PROJECT STRUCTURE"
+          echo "======================================"
+
+          pwd
+
+          echo ""
+          echo "Project files:"
+          ls -la
+
+          echo ""
+          echo "App directory:"
+          ls -la app
+
+          echo ""
+          echo "Build Gradle:"
+          ls -lh app/build.gradle
+
+      # 4. Update HTML and version
       - name: Update HTML and version
         working-directory: TaxiDriver_PlayStore_Project
         run: |
+          echo "======================================"
+          echo "UPDATING HTML AND VERSION"
+          echo "======================================"
+
+          # Create assets directory
           mkdir -p app/src/main/assets
 
+          # Copy latest HTML
           cp ../Taxi_Driver_SafeArea_1.3.2_Settings_Clean.html \
              app/src/main/assets/index.html
 
           echo "HTML copied successfully."
 
+          # Update version
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -46,12 +75,14 @@ jobs:
 
           s = p.read_text()
 
+          # Version Code = 4
           s = re.sub(
               r'versionCode\s+\d+',
               'versionCode 4',
               s
           )
 
+          # Version Name = 1.0.3
           s = re.sub(
               r'versionName\s+[\'"][^\'"]+[\'"]',
               'versionName "1.0.3"',
@@ -60,88 +91,157 @@ jobs:
 
           p.write_text(s)
 
+          print("================================")
+          print("VERSION UPDATED")
           print("Version Code : 4")
           print("Version Name : 1.0.3")
+          print("================================")
           PY
 
-      # 4. Verify project
+      # 5. Verify HTML and Android configuration
       - name: Verify project
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          echo "Package:"
+          echo "======================================"
+          echo "VERIFYING PROJECT"
+          echo "======================================"
+
+          test -f app/src/main/assets/index.html
+
+          echo "HTML file: OK"
+
+          echo ""
+          echo "Application ID:"
           grep -n "applicationId" app/build.gradle
 
-          echo "Version:"
+          echo ""
+          echo "Version Code:"
           grep -n "versionCode" app/build.gradle
+
+          echo ""
+          echo "Version Name:"
           grep -n "versionName" app/build.gradle
 
-          echo "HTML:"
-          test -f app/src/main/assets/index.html
-          echo "index.html OK"
+          echo ""
+          echo "Target SDK:"
+          grep -n "targetSdk" app/build.gradle
 
-      # 5. Setup Java
+      # 6. Setup Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # 6. Setup Android SDK
+      # 7. Setup Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # 7. Install Android SDK
+      # 8. Install Android SDK components
       - name: Install Android SDK components
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-36"
           sdkmanager "build-tools;36.0.0"
 
-      # 8. Setup Gradle
-      - name: Setup Gradle
+          echo "Android SDK components installed."
+
+      # 9. Setup Gradle 8.11.1
+      - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
-      # 9. Check Gradle
+      # 10. Check Gradle
       - name: Check Gradle
         run: |
+          echo "======================================"
+          echo "GRADLE VERSION"
+          echo "======================================"
+
           gradle --version
 
-      # 10. Decode existing signing key
+      # 11. Decode existing signing keystore
       - name: Decode signing keystore
         working-directory: TaxiDriver_PlayStore_Project
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
+          echo "======================================"
+          echo "LOADING EXISTING SIGNING KEY"
+          echo "======================================"
+
+          mkdir -p app
+
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ERROR: KEYSTORE_BASE64 secret is empty."
+            exit 1
+          fi
+
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > app/taxi-driver-release.jks
 
-          test -s app/taxi-driver-release.jks
+          if [ ! -s app/taxi-driver-release.jks ]; then
+            echo "ERROR: Keystore could not be created."
+            exit 1
+          fi
 
-          echo "Existing signing keystore loaded."
+          echo "Existing keystore loaded successfully."
 
-      # 11. Clean
+      # 12. Inspect signing keystore
+      - name: Inspect signing keystore
+        working-directory: TaxiDriver_PlayStore_Project
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          echo "======================================"
+          echo "CHECKING KEYSTORE"
+          echo "======================================"
+
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "ERROR: KEYSTORE_PASSWORD secret is empty."
+            exit 1
+          fi
+
+          keytool -list \
+            -keystore app/taxi-driver-release.jks \
+            -storepass "$KEYSTORE_PASSWORD"
+
+      # 13. Clean project
       - name: Clean project
         working-directory: TaxiDriver_PlayStore_Project
         run: |
+          echo "======================================"
+          echo "CLEANING PROJECT"
+          echo "======================================"
+
           gradle clean --stacktrace
 
-      # 12. Build unsigned Release AAB
+      # 14. Build Release AAB
       - name: Build Release AAB
         working-directory: TaxiDriver_PlayStore_Project
         run: |
+          echo "======================================"
+          echo "BUILDING RELEASE AAB"
+          echo "======================================"
+
           gradle bundleRelease --stacktrace
 
-      # 13. Find AAB
+      # 15. Find generated AAB
       - name: Find generated AAB
         working-directory: TaxiDriver_PlayStore_Project
         run: |
-          echo "Generated AAB files:"
-          find app/build/outputs/bundle -type f -name "*.aab" -print
+          echo "======================================"
+          echo "SEARCHING FOR AAB"
+          echo "======================================"
 
-      # 14. Sign AAB
-      - name: Sign AAB with existing upload key
+          find app/build/outputs/bundle \
+            -type f \
+            -name "*.aab" \
+            -print
+
+      # 16. Sign AAB with existing private key
+      - name: Sign AAB with existing private key
         working-directory: TaxiDriver_PlayStore_Project
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -152,73 +252,141 @@ jobs:
           echo "SIGNING RELEASE AAB"
           echo "======================================"
 
-          AAB_FILE=$(find app/build/outputs/bundle -type f -name "*.aab" | head -n 1)
+          KEYSTORE="app/taxi-driver-release.jks"
+
+          if [ ! -s "$KEYSTORE" ]; then
+            echo "ERROR: Keystore not found."
+            exit 1
+          fi
+
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "ERROR: KEYSTORE_PASSWORD is empty."
+            exit 1
+          fi
+
+          if [ -z "$KEY_PASSWORD" ]; then
+            echo "ERROR: KEY_PASSWORD is empty."
+            exit 1
+          fi
+
+          AAB_FILE=$(find app/build/outputs/bundle \
+            -type f \
+            -name "*.aab" | head -n 1)
 
           if [ -z "$AAB_FILE" ]; then
-            echo "ERROR: AAB not found."
+            echo "ERROR: AAB file not found."
             exit 1
           fi
 
           echo "AAB found:"
           echo "$AAB_FILE"
 
+          echo ""
+          echo "Checking KEY_ALIAS..."
+
+          ALIAS_TYPE=$(keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" 2>/dev/null |
+            grep "Entry type:" | head -n 1 || true)
+
+          PRIVATE_ALIAS="$KEY_ALIAS"
+
+          if echo "$ALIAS_TYPE" | grep -q "PrivateKeyEntry"; then
+            echo "Configured KEY_ALIAS is a PrivateKeyEntry."
+          else
+            echo "Configured KEY_ALIAS is not a PrivateKeyEntry."
+            echo "Searching for a PrivateKeyEntry..."
+
+            PRIVATE_ALIAS=$(keytool -list -v \
+              -keystore "$KEYSTORE" \
+              -storepass "$KEYSTORE_PASSWORD" 2>/dev/null |
+              awk '
+                /Alias name:/ {
+                  alias=$0
+                  sub(/^.*Alias name: /, "", alias)
+                }
+                /Entry type: PrivateKeyEntry/ {
+                  print alias
+                  exit
+                }
+              ')
+
+            if [ -z "$PRIVATE_ALIAS" ]; then
+              echo "ERROR: No PrivateKeyEntry found."
+              exit 1
+            fi
+
+            echo "PrivateKeyEntry found and will be used."
+          fi
+
+          echo ""
+          echo "Signing AAB..."
+
           jarsigner \
             -verbose \
             -sigalg SHA256withRSA \
             -digestalg SHA-256 \
-            -keystore app/taxi-driver-release.jks \
+            -keystore "$KEYSTORE" \
             -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" \
             "$AAB_FILE" \
-            "$KEY_ALIAS"
+            "$PRIVATE_ALIAS"
 
           echo ""
           echo "AAB signing completed."
 
-      # 15. Verify AAB signature
+      # 17. Verify AAB signature
       - name: Verify AAB signature
         working-directory: TaxiDriver_PlayStore_Project
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          AAB_FILE=$(find app/build/outputs/bundle -type f -name "*.aab" | head -n 1)
-
-          if [ -z "$AAB_FILE" ]; then
-            echo "ERROR: AAB not found."
-            exit 1
-          fi
-
           echo "======================================"
           echo "VERIFYING AAB SIGNATURE"
           echo "======================================"
 
-          jarsigner -verify -verbose -certs "$AAB_FILE"
-
-          echo ""
-          echo "AAB signature verification completed."
-
-      # 16. Prepare release
-      - name: Prepare release AAB
-        working-directory: TaxiDriver_PlayStore_Project
-        run: |
-          mkdir -p release
-
-          AAB_FILE=$(find app/build/outputs/bundle -type f -name "*.aab" | head -n 1)
+          AAB_FILE=$(find app/build/outputs/bundle \
+            -type f \
+            -name "*.aab" | head -n 1)
 
           if [ -z "$AAB_FILE" ]; then
-            echo "ERROR: AAB not found."
+            echo "ERROR: AAB file not found."
             exit 1
           fi
 
-          cp "$AAB_FILE" release/Taxi-Driver-1.0.3.aab
+          jarsigner -verify -verbose -certs "$AAB_FILE"
 
+          echo ""
           echo "======================================"
-          echo "FINAL AAB"
+          echo "AAB SIGNATURE VERIFIED"
           echo "======================================"
 
+      # 18. Prepare final AAB
+      - name: Prepare release AAB
+        working-directory: TaxiDriver_PlayStore_Project
+        run: |
+          echo "======================================"
+          echo "PREPARING FINAL AAB"
+          echo "======================================"
+
+          mkdir -p release
+
+          AAB_FILE=$(find app/build/outputs/bundle \
+            -type f \
+            -name "*.aab" | head -n 1)
+
+          if [ -z "$AAB_FILE" ]; then
+            echo "ERROR: AAB file not found."
+            exit 1
+          fi
+
+          cp "$AAB_FILE" \
+            release/Taxi-Driver-1.0.3.aab
+
+          echo ""
+          echo "Final AAB:"
           ls -lh release/Taxi-Driver-1.0.3.aab
 
-      # 17. Upload artifact
+      # 19. Upload AAB artifact
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
@@ -226,20 +394,20 @@ jobs:
           path: TaxiDriver_PlayStore_Project/release/Taxi-Driver-1.0.3.aab
           if-no-files-found: error
 
-      # 18. Build summary
+      # 20. Final build summary
       - name: Build summary
         run: |
           echo ""
           echo "======================================"
-          echo "TAXI DRIVER BUILD SUCCESS"
+          echo "      TAXI DRIVER BUILD SUCCESS"
           echo "======================================"
           echo ""
           echo "App Name     : Taxi Driver"
           echo "Package Name : com.taxidriver.apk"
           echo "Version Code : 4"
           echo "Version Name : 1.0.3"
-          echo "Target API   : 36"
-          echo "Signed       : YES"
-          echo "AAB          : Taxi-Driver-1.0.3.aab"
+          echo "Target SDK   : 36"
+          echo "AAB Signed   : YES"
+          echo "AAB File     : Taxi-Driver-1.0.3.aab"
           echo ""
           echo "======================================"
