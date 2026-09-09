@@ -1,0 +1,101 @@
+name: Build Taxi Driver Direct PDF
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Extract Direct PDF project
+        run: |
+          unzip -o Taxi_Driver_PlayStore_Update_1.0.4_DIRECT_PDF.zip -d direct_pdf_project
+
+          PROJECT_DIR=$(find direct_pdf_project -type f -name "settings.gradle" -print -quit | xargs dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android project not found"
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project found at: $PROJECT_DIR"
+
+      - name: Verify Direct PDF project
+        run: |
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
+          test -f "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
+          test -f "$PROJECT_DIR/app/build.gradle"
+
+          echo "Direct PDF project verified successfully"
+
+      - name: Decode existing signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ERROR: KEYSTORE_BASE64 secret is missing"
+            exit 1
+          fi
+
+          echo "$KEYSTORE_BASE64" | base64 --decode > upload-keystore.jks
+
+          test -s upload-keystore.jks
+
+          echo "Signing keystore decoded successfully"
+
+      - name: Build Release APK and AAB
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          cd "$PROJECT_DIR"
+
+          gradle clean
+
+          gradle :app:assembleRelease :app:bundleRelease \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/upload-keystore.jks" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: Prepare APK and AAB
+        run: |
+          cp "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" \
+             Taxi-Driver-1.0.4-Direct-PDF.apk
+
+          cp "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
+             Taxi-Driver-1.0.4-Direct-PDF.aab
+
+          echo "APK:"
+          ls -lh Taxi-Driver-1.0.4-Direct-PDF.apk
+
+          echo "AAB:"
+          ls -lh Taxi-Driver-1.0.4-Direct-PDF.aab
+
+      - name: Upload APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Taxi-Driver-1.0.4-Direct-PDF
+          path: |
+            Taxi-Driver-1.0.4-Direct-PDF.apk
+            Taxi-Driver-1.0.4-Direct-PDF.aab
