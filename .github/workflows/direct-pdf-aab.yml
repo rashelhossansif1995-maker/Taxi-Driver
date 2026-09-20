@@ -27,7 +27,7 @@ jobs:
 
       - name: Extract Direct PDF project
         run: |
-          unzip -o Taxi_Driver_PlayStore_Update_1.0.4_DIRECT_PDF.zip -d direct_pdf_project
+          unzip -o Taxi_Driver_PlayStore_Update_1.0.5_DIRECT_PDF.zip -d direct_pdf_project
 
           PROJECT_DIR=$(find direct_pdf_project -type f -name "settings.gradle" -print -quit | xargs dirname)
 
@@ -46,6 +46,16 @@ jobs:
           test -f "$PROJECT_DIR/app/build.gradle"
 
           echo "Direct PDF project verified successfully"
+
+      - name: Verify version and Target API
+        run: |
+          grep -n "versionCode\|versionName\|targetSdk" "$PROJECT_DIR/app/build.gradle"
+
+          test "$(grep -o "versionCode [0-9]*" "$PROJECT_DIR/app/build.gradle" | head -1 | awk '{print $2}')" = "105"
+
+          test "$(grep -o "targetSdk [0-9]*" "$PROJECT_DIR/app/build.gradle" | head -1 | awk '{print $2}')" = "36"
+
+          echo "Version 1.0.5 and Target API 36 verified"
 
       - name: Decode existing signing key
         env:
@@ -81,21 +91,21 @@ jobs:
       - name: Prepare APK and AAB
         run: |
           cp "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" \
-             Taxi-Driver-1.0.4-Direct-PDF.apk
+             Taxi-Driver-1.0.5-Direct-PDF.apk
 
           cp "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
-             Taxi-Driver-1.0.4-Direct-PDF.aab
+             Taxi-Driver-1.0.5-Direct-PDF.aab
 
           echo "APK:"
-          ls -lh Taxi-Driver-1.0.4-Direct-PDF.apk
+          ls -lh Taxi-Driver-1.0.5-Direct-PDF.apk
 
           echo "AAB:"
-          ls -lh Taxi-Driver-1.0.4-Direct-PDF.aab
+          ls -lh Taxi-Driver-1.0.5-Direct-PDF.aab
 
       - name: Upload APK and AAB
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.0.4-Direct-PDF
+          name: Taxi-Driver-1.0.5-Direct-PDF
           path: |
-            Taxi-Driver-1.0.4-Direct-PDF.apk
-            Taxi-Driver-1.0.4-Direct-PDF.aab
+            Taxi-Driver-1.0.5-Direct-PDF.apk
+            Taxi-Driver-1.0.5-Direct-PDF.aab
