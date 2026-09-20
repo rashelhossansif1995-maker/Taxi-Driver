@@ -8,20 +8,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # ==========================================
+      # 1. Checkout Repository
+      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # ==========================================
+      # 2. Setup JDK 17
+      # ==========================================
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+
+      # ==========================================
+      # 3. Setup Android SDK
+      # ==========================================
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: ''
 
+
+      # ==========================================
+      # 4. Install Android 36 SDK
+      # ==========================================
       - name: Install Android 36 SDK components
         run: |
           sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" \
@@ -29,23 +45,38 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
+
+      # ==========================================
+      # 5. Verify Android SDK
+      # ==========================================
       - name: Verify Android SDK
         run: |
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
           test -d "${ANDROID_SDK_ROOT}/platforms/android-36"
+
           test -d "${ANDROID_SDK_ROOT}/build-tools/36.0.0"
 
           echo "Android SDK 36 verified successfully"
 
+
+      # ==========================================
+      # 6. Setup Gradle
+      # ==========================================
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
+
+      # ==========================================
+      # 7. Extract Taxi Driver Project
+      # ==========================================
       - name: Extract Direct PDF project
         run: |
-          unzip -o Taxi_Driver_PlayStore_Update_1.0.5_DIRECT_PDF.zip \
+
+          unzip -o \
+            Taxi_Driver_PlayStore_Update_1.0.5_DIRECT_PDF.zip \
             -d direct_pdf_project
 
           PROJECT_DIR=$(find direct_pdf_project \
@@ -59,42 +90,84 @@ jobs:
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Project found at: $PROJECT_DIR"
 
+          echo "Project found at:"
+          echo "$PROJECT_DIR"
+
+
+      # ==========================================
+      # 8. Enable AndroidX
+      # ==========================================
       - name: Enable AndroidX
         run: |
+
           touch "$PROJECT_DIR/gradle.properties"
 
-          if ! grep -q '^android.useAndroidX=' "$PROJECT_DIR/gradle.properties"; then
-            echo 'android.useAndroidX=true' >> "$PROJECT_DIR/gradle.properties"
+          if ! grep -q '^android.useAndroidX=' \
+            "$PROJECT_DIR/gradle.properties"; then
+
+            echo 'android.useAndroidX=true' \
+              >> "$PROJECT_DIR/gradle.properties"
+
           else
-            sed -i 's/^android.useAndroidX=.*/android.useAndroidX=true/' \
+
+            sed -i \
+              's/^android.useAndroidX=.*/android.useAndroidX=true/' \
               "$PROJECT_DIR/gradle.properties"
+
           fi
 
-          if ! grep -q '^android.enableJetifier=' "$PROJECT_DIR/gradle.properties"; then
-            echo 'android.enableJetifier=true' >> "$PROJECT_DIR/gradle.properties"
+
+          if ! grep -q '^android.enableJetifier=' \
+            "$PROJECT_DIR/gradle.properties"; then
+
+            echo 'android.enableJetifier=true' \
+              >> "$PROJECT_DIR/gradle.properties"
+
           else
-            sed -i 's/^android.enableJetifier=.*/android.enableJetifier=true/' \
+
+            sed -i \
+              's/^android.enableJetifier=.*/android.enableJetifier=true/' \
               "$PROJECT_DIR/gradle.properties"
+
           fi
+
 
           echo "===== gradle.properties ====="
+
           cat "$PROJECT_DIR/gradle.properties"
 
+
+      # ==========================================
+      # 9. Verify Project Files
+      # ==========================================
       - name: Verify Direct PDF project
         run: |
-          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
-          test -f "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
-          test -f "$PROJECT_DIR/app/build.gradle"
+
+          test -f \
+            "$PROJECT_DIR/app/src/main/assets/index.html"
+
+          test -f \
+            "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
+
+          test -f \
+            "$PROJECT_DIR/app/build.gradle"
 
           echo "Direct PDF project verified successfully"
 
+
+      # ==========================================
+      # 10. Verify Version and Target API
+      # ==========================================
       - name: Verify version and Target API
         run: |
-          grep -n \
-            "versionCode\|versionName\|targetSdk" \
-            "$PROJECT_DIR/app/build.gradle"
+
+          echo "===== app/build.gradle ====="
+
+          cat "$PROJECT_DIR/app/build.gradle"
+
+
+          echo "===== Checking Version ====="
 
           VERSION_CODE=$(grep -o \
             "versionCode [0-9]*" \
@@ -102,50 +175,144 @@ jobs:
             | head -1 \
             | awk '{print $2}')
 
+
           TARGET_SDK=$(grep -o \
             "targetSdk [0-9]*" \
             "$PROJECT_DIR/app/build.gradle" \
             | head -1 \
             | awk '{print $2}')
 
+
+          MIN_SDK=$(grep -o \
+            "minSdk [0-9]*" \
+            "$PROJECT_DIR/app/build.gradle" \
+            | head -1 \
+            | awk '{print $2}')
+
+
+          echo "VERSION_CODE=$VERSION_CODE"
+
+          echo "TARGET_SDK=$TARGET_SDK"
+
+          echo "MIN_SDK=$MIN_SDK"
+
+
           test "$VERSION_CODE" = "105"
+
           test "$TARGET_SDK" = "36"
 
+          test "$MIN_SDK" = "23"
+
+
           echo "Version 1.0.5 verified"
+
           echo "Target API 36 verified"
 
+          echo "Min SDK 23 verified"
+
+
+      # ==========================================
+      # 11. Verify AdMob SDK
+      # ==========================================
+      - name: Verify AdMob SDK
+        run: |
+
+          grep -n \
+            "play-services-ads" \
+            "$PROJECT_DIR/app/build.gradle"
+
+
+          grep -q \
+            "play-services-ads:24.8.0" \
+            "$PROJECT_DIR/app/build.gradle"
+
+
+          echo "AdMob SDK 24.8.0 verified"
+
+
+      # ==========================================
+      # 12. Verify Google Play Billing
+      # ==========================================
+      - name: Verify Google Play Billing
+        run: |
+
+          grep -n \
+            "billing" \
+            "$PROJECT_DIR/app/build.gradle"
+
+
+          grep -q \
+            "billing:9.1.0" \
+            "$PROJECT_DIR/app/build.gradle"
+
+
+          echo "Google Play Billing 9.1.0 verified"
+
+
+      # ==========================================
+      # 13. Decode Existing Signing Key
+      # ==========================================
       - name: Decode existing signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
         run: |
+
           if [ -z "$KEYSTORE_BASE64" ]; then
+
             echo "ERROR: KEYSTORE_BASE64 secret is missing"
+
             exit 1
+
           fi
 
-          echo "$KEYSTORE_BASE64" | base64 --decode > upload-keystore.jks
+
+          echo "$KEYSTORE_BASE64" \
+            | base64 --decode \
+            > upload-keystore.jks
+
 
           test -s upload-keystore.jks
 
+
           echo "Signing keystore decoded successfully"
 
+
+      # ==========================================
+      # 14. Build Release APK + AAB
+      # ==========================================
       - name: Build Release APK and AAB
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
         run: |
+
           cd "$PROJECT_DIR"
 
-          echo "===== GRADLE CLEAN ====="
+
+          echo "=========================================="
+
+          echo "GRADLE CLEAN"
+
+          echo "=========================================="
+
 
           gradle clean \
             --no-daemon \
             --stacktrace
 
-          echo "===== BUILD RELEASE APK + AAB ====="
+
+          echo "=========================================="
+
+          echo "BUILD RELEASE APK + AAB"
+
+          echo "=========================================="
+
 
           set -o pipefail
+
 
           gradle \
             :app:assembleRelease \
@@ -158,36 +325,81 @@ jobs:
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
             -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
-            2>&1 | tee "$GITHUB_WORKSPACE/gradle-build.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gradle-build.log"
 
+
+      # ==========================================
+      # 15. Prepare APK + AAB
+      # ==========================================
       - name: Prepare APK and AAB
         if: success()
+
         run: |
-          cp "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" \
+
+          cp \
+            "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" \
             Taxi-Driver-1.0.5-Direct-PDF.apk
 
-          cp "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
+
+          cp \
+            "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
             Taxi-Driver-1.0.5-Direct-PDF.aab
 
-          echo "===== APK ====="
-          ls -lh Taxi-Driver-1.0.5-Direct-PDF.apk
 
-          echo "===== AAB ====="
-          ls -lh Taxi-Driver-1.0.5-Direct-PDF.aab
+          echo "=========================================="
 
+          echo "APK"
+
+          echo "=========================================="
+
+
+          ls -lh \
+            Taxi-Driver-1.0.5-Direct-PDF.apk
+
+
+          echo "=========================================="
+
+          echo "AAB"
+
+          echo "=========================================="
+
+
+          ls -lh \
+            Taxi-Driver-1.0.5-Direct-PDF.aab
+
+
+      # ==========================================
+      # 16. Upload APK + AAB
+      # ==========================================
       - name: Upload APK and AAB
         if: success()
+
         uses: actions/upload-artifact@v4
+
         with:
+
           name: Taxi-Driver-1.0.5-Direct-PDF
+
           path: |
+
             Taxi-Driver-1.0.5-Direct-PDF.apk
+
             Taxi-Driver-1.0.5-Direct-PDF.aab
 
+
+      # ==========================================
+      # 17. Upload Build Log
+      # ==========================================
       - name: Upload Gradle build log
         if: always()
+
         uses: actions/upload-artifact@v4
+
         with:
+
           name: Taxi-Driver-Gradle-Build-Log
+
           path: gradle-build.log
+
           if-no-files-found: ignore
