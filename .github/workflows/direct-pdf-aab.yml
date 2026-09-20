@@ -122,18 +122,87 @@ jobs:
 
 
       # ==========================================
-      # 9. Verify BillingClientStateListener
+      # 9. Fix BillingClientStateListener
       # ==========================================
-      - name: Verify BillingClientStateListener
+      - name: Fix BillingClientStateListener
         run: |
-          MAIN_ACTIVITY="$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
+          export MAIN_ACTIVITY="$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
 
           if [ ! -f "$MAIN_ACTIVITY" ]; then
             echo "ERROR: MainActivity.java not found"
             exit 1
           fi
 
-          echo "Checking BillingClientStateListener..."
+          echo "=========================================="
+          echo "Checking MainActivity.java"
+          echo "=========================================="
+
+          grep -n \
+            "BillingClientStateListener" \
+            "$MAIN_ACTIVITY" || true
+
+          python3 <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["MAIN_ACTIVITY"])
+
+          text = path.read_text(encoding="utf-8")
+
+          import_line = (
+              "import com.android.billingclient.api."
+              "BillingClientStateListener;"
+          )
+
+          old_listener = (
+              "new BillingClient.BillingClientStateListener()"
+          )
+
+          new_listener = (
+              "new BillingClientStateListener()"
+          )
+
+          # Add the correct import if missing.
+          if import_line not in text:
+              marker = "import com.android.billingclient.api.BillingClient;"
+              if marker in text:
+                  text = text.replace(
+                      marker,
+                      marker + "\n" + import_line,
+                      1
+                  )
+              else:
+                  package_end = text.find(";")
+                  if package_end != -1:
+                      package_end += 1
+                      text = (
+                          text[:package_end]
+                          + "\n\n"
+                          + import_line
+                          + text[package_end:]
+                      )
+
+          # Fix old nested listener syntax.
+          text = text.replace(
+              old_listener,
+              new_listener
+          )
+
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
+
+          print("MainActivity.java BillingClientStateListener fix applied.")
+          PY
+
+          echo "=========================================="
+          echo "BillingClientStateListener after fix"
+          echo "=========================================="
+
+          grep -n \
+            "BillingClientStateListener" \
+            "$MAIN_ACTIVITY"
 
           grep -q \
             "import com.android.billingclient.api.BillingClientStateListener;" \
@@ -187,7 +256,7 @@ jobs:
 
 
       # ==========================================
-      # 11. Verify Project Files
+      # 11. Verify Direct PDF Project
       # ==========================================
       - name: Verify Direct PDF project
         run: |
@@ -333,6 +402,7 @@ jobs:
       - name: Decode existing signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
             echo "ERROR: KEYSTORE_BASE64 secret is missing"
@@ -394,6 +464,7 @@ jobs:
       # ==========================================
       - name: Prepare APK and AAB
         if: success()
+
         run: |
           cp \
             "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" \
@@ -419,9 +490,12 @@ jobs:
       # ==========================================
       - name: Upload APK and AAB
         if: success()
+
         uses: actions/upload-artifact@v4
+
         with:
           name: Taxi-Driver-1.0.5-Direct-PDF
+
           path: |
             Taxi-Driver-1.0.5-Direct-PDF.apk
             Taxi-Driver-1.0.5-Direct-PDF.aab
@@ -432,8 +506,12 @@ jobs:
       # ==========================================
       - name: Upload Gradle build log
         if: always()
+
         uses: actions/upload-artifact@v4
+
         with:
           name: Taxi-Driver-Gradle-Build-Log
+
           path: gradle-build.log
+
           if-no-files-found: ignore
