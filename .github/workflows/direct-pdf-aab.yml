@@ -32,8 +32,6 @@ jobs:
       - name: Verify Android SDK
         run: |
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" --list_installed | grep -E \
-            "platform-tools|platforms;android-36|build-tools;36.0.0" || true
 
           test -d "${ANDROID_SDK_ROOT}/platforms/android-36"
           test -d "${ANDROID_SDK_ROOT}/build-tools/36.0.0"
@@ -47,9 +45,13 @@ jobs:
 
       - name: Extract Direct PDF project
         run: |
-          unzip -o Taxi_Driver_PlayStore_Update_1.0.5_DIRECT_PDF.zip -d direct_pdf_project
+          unzip -o Taxi_Driver_PlayStore_Update_1.0.5_DIRECT_PDF.zip \
+            -d direct_pdf_project
 
-          PROJECT_DIR=$(find direct_pdf_project -type f -name "settings.gradle" -print -quit | xargs dirname)
+          PROJECT_DIR=$(find direct_pdf_project \
+            -type f \
+            -name "settings.gradle" \
+            -print -quit | xargs dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "ERROR: Android project not found"
@@ -69,13 +71,27 @@ jobs:
 
       - name: Verify version and Target API
         run: |
-          grep -n "versionCode\|versionName\|targetSdk" "$PROJECT_DIR/app/build.gradle"
+          grep -n \
+            "versionCode\|versionName\|targetSdk" \
+            "$PROJECT_DIR/app/build.gradle"
 
-          test "$(grep -o "versionCode [0-9]*" "$PROJECT_DIR/app/build.gradle" | head -1 | awk '{print $2}')" = "105"
+          VERSION_CODE=$(grep -o \
+            "versionCode [0-9]*" \
+            "$PROJECT_DIR/app/build.gradle" \
+            | head -1 \
+            | awk '{print $2}')
 
-          test "$(grep -o "targetSdk [0-9]*" "$PROJECT_DIR/app/build.gradle" | head -1 | awk '{print $2}')" = "36"
+          TARGET_SDK=$(grep -o \
+            "targetSdk [0-9]*" \
+            "$PROJECT_DIR/app/build.gradle" \
+            | head -1 \
+            | awk '{print $2}')
 
-          echo "Version 1.0.5 and Target API 36 verified"
+          test "$VERSION_CODE" = "105"
+          test "$TARGET_SDK" = "36"
+
+          echo "Version 1.0.5 verified"
+          echo "Target API 36 verified"
 
       - name: Decode existing signing key
         env:
@@ -100,15 +116,28 @@ jobs:
         run: |
           cd "$PROJECT_DIR"
 
-          gradle clean
+          echo "===== GRADLE CLEAN ====="
+          gradle clean --no-daemon --stacktrace
 
-          gradle :app:assembleRelease :app:bundleRelease \
+          echo "===== BUILD RELEASE APK + AAB ====="
+
+          set -o pipefail
+
+          gradle \
+            :app:assembleRelease \
+            :app:bundleRelease \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            --console=plain \
             -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/upload-keystore.jks" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
+            2>&1 | tee "$GITHUB_WORKSPACE/gradle-build.log"
 
       - name: Prepare APK and AAB
+        if: success()
         run: |
           cp "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" \
             Taxi-Driver-1.0.5-Direct-PDF.apk
@@ -116,16 +145,25 @@ jobs:
           cp "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
             Taxi-Driver-1.0.5-Direct-PDF.aab
 
-          echo "APK:"
+          echo "===== APK ====="
           ls -lh Taxi-Driver-1.0.5-Direct-PDF.apk
 
-          echo "AAB:"
+          echo "===== AAB ====="
           ls -lh Taxi-Driver-1.0.5-Direct-PDF.aab
 
       - name: Upload APK and AAB
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Taxi-Driver-1.0.5-Direct-PDF
           path: |
             Taxi-Driver-1.0.5-Direct-PDF.apk
             Taxi-Driver-1.0.5-Direct-PDF.aab
+
+      - name: Upload Gradle build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Taxi-Driver-Gradle-Build-Log
+          path: gradle-build.log
+          if-no-files-found: ignore
