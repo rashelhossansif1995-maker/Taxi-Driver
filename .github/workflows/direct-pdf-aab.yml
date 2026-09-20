@@ -94,12 +94,14 @@ jobs:
 
 
       # ==========================================
-      # 8. Fix AdMob SDK
+      # 8. Fix AdMob SDK Version
       # ==========================================
       - name: Fix AdMob SDK version
         run: |
-          echo "Current AdMob SDK:"
-          grep -n "play-services-ads" \
+          echo "Checking current AdMob SDK..."
+
+          grep -n \
+            "play-services-ads" \
             "$PROJECT_DIR/app/build.gradle" || true
 
           sed -i \
@@ -107,20 +109,22 @@ jobs:
             "$PROJECT_DIR/app/build.gradle"
 
           echo "AdMob SDK after fix:"
-          grep -n "play-services-ads" \
+
+          grep -n \
+            "play-services-ads" \
             "$PROJECT_DIR/app/build.gradle"
 
           grep -q \
             "play-services-ads:24.8.0" \
             "$PROJECT_DIR/app/build.gradle"
 
-          echo "AdMob SDK 24.8.0 verified"
+          echo "AdMob SDK 24.8.0 verified successfully"
 
 
       # ==========================================
-      # 9. Fix BillingClientStateListener
+      # 9. Verify BillingClientStateListener
       # ==========================================
-      - name: Fix BillingClientStateListener
+      - name: Verify BillingClientStateListener
         run: |
           MAIN_ACTIVITY="$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
 
@@ -131,5 +135,305 @@ jobs:
 
           echo "Checking BillingClientStateListener..."
 
-          grep -n "BillingClientStateListener" \
-            "$
+          grep -q \
+            "import com.android.billingclient.api.BillingClientStateListener;" \
+            "$MAIN_ACTIVITY"
+
+          grep -q \
+            "new BillingClientStateListener()" \
+            "$MAIN_ACTIVITY"
+
+          echo "BillingClientStateListener verified successfully"
+
+
+      # ==========================================
+      # 10. Enable AndroidX
+      # ==========================================
+      - name: Enable AndroidX
+        run: |
+          touch "$PROJECT_DIR/gradle.properties"
+
+          if ! grep -q '^android.useAndroidX=' \
+            "$PROJECT_DIR/gradle.properties"; then
+
+            echo 'android.useAndroidX=true' \
+              >> "$PROJECT_DIR/gradle.properties"
+
+          else
+
+            sed -i \
+              's/^android.useAndroidX=.*/android.useAndroidX=true/' \
+              "$PROJECT_DIR/gradle.properties"
+
+          fi
+
+          if ! grep -q '^android.enableJetifier=' \
+            "$PROJECT_DIR/gradle.properties"; then
+
+            echo 'android.enableJetifier=true' \
+              >> "$PROJECT_DIR/gradle.properties"
+
+          else
+
+            sed -i \
+              's/^android.enableJetifier=.*/android.enableJetifier=true/' \
+              "$PROJECT_DIR/gradle.properties"
+
+          fi
+
+          echo "===== gradle.properties ====="
+
+          cat "$PROJECT_DIR/gradle.properties"
+
+
+      # ==========================================
+      # 11. Verify Project Files
+      # ==========================================
+      - name: Verify Direct PDF project
+        run: |
+          test -f \
+            "$PROJECT_DIR/app/src/main/assets/index.html"
+
+          test -f \
+            "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
+
+          test -f \
+            "$PROJECT_DIR/app/build.gradle"
+
+          echo "Direct PDF project verified successfully"
+
+
+      # ==========================================
+      # 12. Verify Version / SDK
+      # ==========================================
+      - name: Verify version and Target API
+        run: |
+          echo "===== app/build.gradle ====="
+
+          cat "$PROJECT_DIR/app/build.gradle"
+
+          VERSION_CODE=$(grep -o \
+            "versionCode [0-9]*" \
+            "$PROJECT_DIR/app/build.gradle" \
+            | head -1 \
+            | awk '{print $2}')
+
+          TARGET_SDK=$(grep -o \
+            "targetSdk [0-9]*" \
+            "$PROJECT_DIR/app/build.gradle" \
+            | head -1 \
+            | awk '{print $2}')
+
+          MIN_SDK=$(grep -o \
+            "minSdk [0-9]*" \
+            "$PROJECT_DIR/app/build.gradle" \
+            | head -1 \
+            | awk '{print $2}')
+
+          echo "VERSION_CODE=$VERSION_CODE"
+          echo "TARGET_SDK=$TARGET_SDK"
+          echo "MIN_SDK=$MIN_SDK"
+
+          test "$VERSION_CODE" = "105"
+          test "$TARGET_SDK" = "36"
+          test "$MIN_SDK" = "23"
+
+          echo "Version 1.0.5 verified"
+          echo "Target API 36 verified"
+          echo "Min SDK 23 verified"
+
+
+      # ==========================================
+      # 13. Verify AdMob SDK
+      # ==========================================
+      - name: Verify AdMob SDK
+        run: |
+          grep -n \
+            "play-services-ads" \
+            "$PROJECT_DIR/app/build.gradle"
+
+          grep -q \
+            "play-services-ads:24.8.0" \
+            "$PROJECT_DIR/app/build.gradle"
+
+          echo "AdMob SDK 24.8.0 verified successfully"
+
+
+      # ==========================================
+      # 14. Verify Google Play Billing
+      # ==========================================
+      - name: Verify Google Play Billing
+        run: |
+          grep -n \
+            "billing" \
+            "$PROJECT_DIR/app/build.gradle"
+
+          grep -q \
+            "billing:9.1.0" \
+            "$PROJECT_DIR/app/build.gradle"
+
+          echo "Google Play Billing 9.1.0 verified successfully"
+
+
+      # ==========================================
+      # 15. Verify AdMob App ID
+      # ==========================================
+      - name: Verify AdMob App ID
+        run: |
+          grep -R \
+            "ca-app-pub-2520301874823169~9692776272" \
+            "$PROJECT_DIR/app/src/main" \
+            > /dev/null
+
+          echo "AdMob App ID verified successfully"
+
+
+      # ==========================================
+      # 16. Verify AdMob Ad Unit ID
+      # ==========================================
+      - name: Verify AdMob Ad Unit ID
+        run: |
+          grep -R \
+            "ca-app-pub-2520301874823169/4467088492" \
+            "$PROJECT_DIR/app/src/main" \
+            > /dev/null
+
+          echo "AdMob Ad Unit ID verified successfully"
+
+
+      # ==========================================
+      # 17. Verify Premium Product ID
+      # ==========================================
+      - name: Verify Premium Product ID
+        run: |
+          grep -R \
+            "premium_remove_ads" \
+            "$PROJECT_DIR/app/src/main" \
+            > /dev/null
+
+          echo "Premium product ID verified successfully"
+
+
+      # ==========================================
+      # 18. Verify Billing Permission
+      # ==========================================
+      - name: Verify Billing Permission
+        run: |
+          grep -R \
+            "com.android.vending.BILLING" \
+            "$PROJECT_DIR/app/src/main/AndroidManifest.xml" \
+            > /dev/null
+
+          echo "Google Play Billing permission verified successfully"
+
+
+      # ==========================================
+      # 19. Decode Signing Key
+      # ==========================================
+      - name: Decode existing signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ERROR: KEYSTORE_BASE64 secret is missing"
+            exit 1
+          fi
+
+          echo "$KEYSTORE_BASE64" \
+            | base64 --decode \
+            > upload-keystore.jks
+
+          test -s upload-keystore.jks
+
+          echo "Signing keystore decoded successfully"
+
+
+      # ==========================================
+      # 20. Build Release APK + AAB
+      # ==========================================
+      - name: Build Release APK and AAB
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+        run: |
+          cd "$PROJECT_DIR"
+
+          echo "=========================================="
+          echo "GRADLE CLEAN"
+          echo "=========================================="
+
+          gradle clean \
+            --no-daemon \
+            --stacktrace
+
+          echo "=========================================="
+          echo "BUILD RELEASE APK + AAB"
+          echo "=========================================="
+
+          set -o pipefail
+
+          gradle \
+            :app:assembleRelease \
+            :app:bundleRelease \
+            --no-daemon \
+            --stacktrace \
+            --info \
+            --console=plain \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/upload-keystore.jks" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gradle-build.log"
+
+
+      # ==========================================
+      # 21. Prepare APK + AAB
+      # ==========================================
+      - name: Prepare APK and AAB
+        if: success()
+        run: |
+          cp \
+            "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" \
+            Taxi-Driver-1.0.5-Direct-PDF.apk
+
+          cp \
+            "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
+            Taxi-Driver-1.0.5-Direct-PDF.aab
+
+          echo "===== APK ====="
+
+          ls -lh \
+            Taxi-Driver-1.0.5-Direct-PDF.apk
+
+          echo "===== AAB ====="
+
+          ls -lh \
+            Taxi-Driver-1.0.5-Direct-PDF.aab
+
+
+      # ==========================================
+      # 22. Upload APK + AAB
+      # ==========================================
+      - name: Upload APK and AAB
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Taxi-Driver-1.0.5-Direct-PDF
+          path: |
+            Taxi-Driver-1.0.5-Direct-PDF.apk
+            Taxi-Driver-1.0.5-Direct-PDF.aab
+
+
+      # ==========================================
+      # 23. Upload Gradle Build Log
+      # ==========================================
+      - name: Upload Gradle build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Taxi-Driver-Gradle-Build-Log
+          path: gradle-build.log
+          if-no-files-found: ignore
