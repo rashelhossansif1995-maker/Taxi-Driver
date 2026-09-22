@@ -9,33 +9,18 @@ jobs:
 
     steps:
 
-      # ==========================================
-      # 1. Checkout Repository
-      # ==========================================
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-
-      # ==========================================
-      # 2. JDK 17
-      # ==========================================
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-
-      # ==========================================
-      # 3. Android SDK
-      # ==========================================
       - name: Set up Android SDK 36
         uses: android-actions/setup-android@v4
 
-
-      # ==========================================
-      # 4. Install Android 36
-      # ==========================================
       - name: Install Android 36 SDK components
         run: |
           sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" \
@@ -43,531 +28,271 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-
-      # ==========================================
-      # 5. Verify Android SDK
-      # ==========================================
       - name: Verify Android SDK 36
         run: |
           test -d "${ANDROID_SDK_ROOT}/platforms/android-36"
           test -d "${ANDROID_SDK_ROOT}/build-tools/36.0.0"
+          echo "Android SDK 36 verified."
 
-          echo "Android SDK 36 verified successfully."
-
-
-      # ==========================================
-      # 6. Gradle
-      # ==========================================
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-
-      # ==========================================
-      # 7. Extract Taxi Driver 1.0.6 Project
-      # ==========================================
       - name: Extract Taxi Driver 1.0.6 project
         run: |
-
           ZIP_FILE="Taxi_Driver_PlayStore_Update_1.0.6_DIRECT_PDF.zip"
-
-          echo "Checking ZIP file..."
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: $ZIP_FILE not found!"
-            echo "Repository files:"
             ls -lah
             exit 1
           fi
 
-          echo "ZIP found:"
-          ls -lh "$ZIP_FILE"
-
-
           rm -rf taxi_driver_project
-
           mkdir -p taxi_driver_project
 
-
-          unzip -o \
-            "$ZIP_FILE" \
-            -d taxi_driver_project
-
+          unzip -o "$ZIP_FILE" -d taxi_driver_project
 
           PROJECT_DIR=$(find taxi_driver_project \
             -type f \
             -name "settings.gradle" \
             -print -quit | xargs -r dirname)
 
-
           if [ -z "$PROJECT_DIR" ]; then
-
             echo "ERROR: Android project not found!"
-
-            find taxi_driver_project \
-              -maxdepth 5 \
-              -type f \
-              | head -100
-
+            find taxi_driver_project -maxdepth 5 -type f | head -100
             exit 1
-
           fi
 
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "PROJECT_DIR=$PROJECT_DIR" \
-            >> "$GITHUB_ENV"
-
-
-          echo "=========================================="
-          echo "ANDROID PROJECT FOUND"
-          echo "=========================================="
-
+          echo "Project found:"
           echo "$PROJECT_DIR"
 
-
-      # ==========================================
-      # 8. Verify Android Project
-      # ==========================================
       - name: Verify Android project
         run: |
+          test -f "$PROJECT_DIR/app/build.gradle"
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+          test -f "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
 
-          test -f \
-            "$PROJECT_DIR/app/build.gradle"
+          echo "Android project verified."
 
-          test -f \
-            "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-
-          test -f \
-            "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
-
-          test -f \
-            "$PROJECT_DIR/app/src/main/assets/index.html"
-
-
-          echo "Android project verified successfully."
-
-
-      # ==========================================
-      # 9. Enable AndroidX
-      # ==========================================
       - name: Enable AndroidX
         run: |
+          touch "$PROJECT_DIR/gradle.properties"
 
-          touch \
-            "$PROJECT_DIR/gradle.properties"
-
-
-          if grep -q \
-            '^android.useAndroidX=' \
-            "$PROJECT_DIR/gradle.properties"; then
-
-            sed -i \
-              's/^android.useAndroidX=.*/android.useAndroidX=true/' \
+          if grep -q '^android.useAndroidX=' "$PROJECT_DIR/gradle.properties"; then
+            sed -i 's/^android.useAndroidX=.*/android.useAndroidX=true/' \
               "$PROJECT_DIR/gradle.properties"
-
           else
-
-            echo 'android.useAndroidX=true' \
-              >> "$PROJECT_DIR/gradle.properties"
-
+            echo 'android.useAndroidX=true' >> "$PROJECT_DIR/gradle.properties"
           fi
 
-
-          if grep -q \
-            '^android.enableJetifier=' \
-            "$PROJECT_DIR/gradle.properties"; then
-
-            sed -i \
-              's/^android.enableJetifier=.*/android.enableJetifier=true/' \
+          if grep -q '^android.enableJetifier=' "$PROJECT_DIR/gradle.properties"; then
+            sed -i 's/^android.enableJetifier=.*/android.enableJetifier=true/' \
               "$PROJECT_DIR/gradle.properties"
-
           else
-
-            echo 'android.enableJetifier=true' \
-              >> "$PROJECT_DIR/gradle.properties"
-
+            echo 'android.enableJetifier=true' >> "$PROJECT_DIR/gradle.properties"
           fi
 
-
-          echo "AndroidX enabled."
-
-
-      # ==========================================
-      # 10. Fix Billing Listener
-      # ==========================================
       - name: Fix BillingClientStateListener
         run: |
-
           MAIN_ACTIVITY="$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
 
-
           python3 - "$MAIN_ACTIVITY" <<'PY'
-
           import sys
-
           from pathlib import Path
 
-
           path = Path(sys.argv[1])
-
-
-          text = path.read_text(
-              encoding="utf-8"
-          )
-
+          text = path.read_text(encoding="utf-8")
 
           import_line = (
               "import com.android.billingclient.api."
               "BillingClientStateListener;"
           )
 
-
           if import_line not in text:
-
               marker = (
                   "import com.android.billingclient.api."
                   "BillingClient;"
               )
 
-
               if marker in text:
-
                   text = text.replace(
                       marker,
                       marker + "\n" + import_line,
                       1
                   )
 
-
           text = text.replace(
               "new BillingClient.BillingClientStateListener()",
               "new BillingClientStateListener()"
           )
 
+          path.write_text(text, encoding="utf-8")
 
-          path.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-
-          print(
-              "BillingClientStateListener fixed successfully."
-          )
-
+          print("BillingClientStateListener fixed.")
           PY
-
 
           grep -q \
             "import com.android.billingclient.api.BillingClientStateListener;" \
             "$MAIN_ACTIVITY"
 
-
           grep -q \
             "new BillingClientStateListener()" \
             "$MAIN_ACTIVITY"
 
-
           echo "Billing listener verified."
 
-
-      # ==========================================
-      # 11. Set Play Store Version
-      # ==========================================
       - name: Set Play Store update version
         run: |
-
           BUILD_FILE="$PROJECT_DIR/app/build.gradle"
 
-
           echo "Current version:"
-
-          grep -n \
-            "versionCode\|versionName" \
-            "$BUILD_FILE" \
-            || true
-
-
-          # Previous release:
-          # versionCode 105
-          #
-          # New release:
-          # versionCode 106
-
+          grep -n "versionCode\|versionName" "$BUILD_FILE" || true
 
           sed -i -E \
             's/versionCode[[:space:]]+[0-9]+/versionCode 106/' \
             "$BUILD_FILE"
 
-
           echo "Final version:"
+          grep -n "versionCode\|versionName" "$BUILD_FILE"
 
-          grep -n \
-            "versionCode\|versionName" \
-            "$BUILD_FILE"
-
-
-      # ==========================================
-      # 12. Verify Target API / Package
-      # ==========================================
       - name: Verify Target API and package
         run: |
-
           BUILD_FILE="$PROJECT_DIR/app/build.gradle"
+          MAIN="$PROJECT_DIR/app/src/main"
 
-          MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-
-
-          echo "=========================================="
-          echo "ANDROID BUILD CONFIGURATION"
-          echo "=========================================="
-
-
-          cat "$BUILD_FILE"
-
-
-          echo "=========================================="
-          echo "CHECKING TARGET SDK"
-          echo "=========================================="
-
+          echo "Checking Target API..."
 
           if grep -Eq \
             'targetSdk[[:space:]]*[=:]?[[:space:]]*36|targetSdkVersion[[:space:]]*[=:]?[[:space:]]*36' \
             "$BUILD_FILE"; then
-
             echo "Target API 36 VERIFIED."
-
           else
-
             echo "ERROR: Target API 36 was not found."
-
             exit 1
-
           fi
 
-
-          echo "=========================================="
-          echo "CHECKING MINIMUM SDK"
-          echo "=========================================="
-
-
-          if grep -Eq \
-            'minSdk[[:space:]]*[=:]?[[:space:]]*23|minSdkVersion[[:space:]]*[=:]?[[:space:]]*23' \
-            "$BUILD_FILE"; then
-
-            echo "Min SDK 23 VERIFIED."
-
-          else
-
-            echo "WARNING: Exact Min SDK 23 format was not detected."
-
-            echo "Continuing build..."
-
-          fi
-
-
-          echo "=========================================="
-          echo "CHECKING PACKAGE"
-          echo "=========================================="
-
+          echo "Checking package..."
 
           if grep -R -q \
             'com.taxidriver.apk' \
-            "$PROJECT_DIR/app/src/main"; then
-
+            "$MAIN"; then
             echo "Package com.taxidriver.apk VERIFIED."
-
           else
-
-            echo "ERROR: Package com.taxidriver.apk was not found."
-
+            echo "ERROR: Package com.taxidriver.apk not found."
             exit 1
-
           fi
 
+          echo "Android configuration passed."
 
-          echo "=========================================="
-          echo "ANDROID CONFIGURATION PASSED"
-          echo "=========================================="
-
-
-      # ==========================================
-      # 13. Verify Google Play Billing
-      # ==========================================
       - name: Verify Google Play Billing
         run: |
-
           BUILD_FILE="$PROJECT_DIR/app/build.gradle"
-
           MAIN="$PROJECT_DIR/app/src/main"
 
-
           echo "Checking Billing SDK..."
-
 
           grep -q \
             "billing:9.1.0" \
             "$BUILD_FILE"
 
-
           echo "Billing 9.1.0 verified."
 
-
           echo "Checking Premium Product ID..."
-
 
           grep -R -q \
             "taxi_driver_premium" \
             "$MAIN"
 
-
           echo "Premium Product ID verified."
 
+          echo "Checking Billing configuration..."
 
-          echo "Checking Billing permission..."
+          if grep -R -q \
+            "billing:9.1.0" \
+            "$PROJECT_DIR"; then
+            echo "Google Play Billing configuration VERIFIED."
+          else
+            echo "ERROR: Billing configuration not found."
+            exit 1
+          fi
 
+          echo "Billing verification passed."
 
-          grep -q \
-            "com.android.vending.BILLING" \
-            "$MAIN/AndroidManifest.xml"
-
-
-          echo "Billing permission verified."
-
-
-      # ==========================================
-      # 14. Verify AdMob
-      # ==========================================
       - name: Verify AdMob
         run: |
-
           BUILD_FILE="$PROJECT_DIR/app/build.gradle"
-
           MAIN="$PROJECT_DIR/app/src/main"
 
-
           echo "Checking AdMob SDK..."
-
 
           grep -q \
             "play-services-ads:25.5.0" \
             "$BUILD_FILE"
 
-
           echo "AdMob SDK verified."
 
-
           echo "Checking AdMob App ID..."
-
 
           grep -R -q \
             "ca-app-pub-2119693628616724~2117482089" \
             "$MAIN"
 
-
           echo "AdMob App ID verified."
 
-
           echo "Checking Banner Ad Unit ID..."
-
 
           grep -R -q \
             "ca-app-pub-2119693628616724/6269224943" \
             "$MAIN"
 
-
           echo "Banner Ad Unit ID verified."
 
-
-      # ==========================================
-      # 15. Verify Adaptive Launcher Icon
-      # ==========================================
       - name: Verify Adaptive Launcher Icon
         run: |
-
           MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
 
+          grep -q 'android:icon=' "$MANIFEST"
+          grep -q 'android:roundIcon=' "$MANIFEST"
 
-          echo "Checking launcher icon..."
+          echo "Launcher icon configuration verified."
 
-
-          grep -q \
-            'android:icon=' \
-            "$MANIFEST"
-
-
-          grep -q \
-            'android:roundIcon=' \
-            "$MANIFEST"
-
-
-          echo "Adaptive launcher icon configuration verified."
-
-
-      # ==========================================
-      # 16. Decode Signing Key
-      # ==========================================
       - name: Decode signing key
         env:
-
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-
         run: |
-
           if [ -z "$KEYSTORE_BASE64" ]; then
-
-            echo "ERROR:"
-            echo "KEYSTORE_BASE64 secret is missing."
-
+            echo "ERROR: KEYSTORE_BASE64 secret is missing."
             exit 1
-
           fi
-
 
           echo "$KEYSTORE_BASE64" \
             | base64 --decode \
             > upload-keystore.jks
 
+          test -s upload-keystore.jks
 
-          test -s \
-            upload-keystore.jks
+          echo "Signing keystore decoded."
 
-
-          echo "Signing keystore decoded successfully."
-
-
-      # ==========================================
-      # 17. Build Release APK + AAB
-      # ==========================================
       - name: Build Release APK and AAB
         env:
-
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-
         run: |
-
           cd "$PROJECT_DIR"
 
-
-          echo "=========================================="
-          echo "GRADLE CLEAN"
-          echo "=========================================="
-
+          echo "Running Gradle clean..."
 
           gradle clean \
             --no-daemon \
             --stacktrace
 
-
-          echo "=========================================="
-          echo "BUILD RELEASE APK + AAB"
-          echo "=========================================="
-
+          echo "Building Release APK and AAB..."
 
           gradle \
             :app:assembleRelease \
@@ -583,74 +308,36 @@ jobs:
             2>&1 \
             | tee "$GITHUB_WORKSPACE/gradle-build.log"
 
-
-      # ==========================================
-      # 18. Prepare APK + AAB
-      # ==========================================
       - name: Prepare APK and AAB
         if: success()
-
         run: |
-
           cp \
             "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" \
             Taxi-Driver-1.0.6-Direct-PDF.apk
-
 
           cp \
             "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
             Taxi-Driver-1.0.6-Direct-PDF.aab
 
+          echo "APK:"
+          ls -lh Taxi-Driver-1.0.6-Direct-PDF.apk
 
-          echo "=========================================="
-          echo "APK"
-          echo "=========================================="
+          echo "AAB:"
+          ls -lh Taxi-Driver-1.0.6-Direct-PDF.aab
 
-
-          ls -lh \
-            Taxi-Driver-1.0.6-Direct-PDF.apk
-
-
-          echo "=========================================="
-          echo "AAB"
-          echo "=========================================="
-
-
-          ls -lh \
-            Taxi-Driver-1.0.6-Direct-PDF.aab
-
-
-      # ==========================================
-      # 19. Upload APK + AAB
-      # ==========================================
       - name: Upload APK and AAB
         if: success()
-
         uses: actions/upload-artifact@v4
-
         with:
-
           name: Taxi-Driver-1.0.6-Direct-PDF
-
           path: |
-
             Taxi-Driver-1.0.6-Direct-PDF.apk
-
             Taxi-Driver-1.0.6-Direct-PDF.aab
 
-
-      # ==========================================
-      # 20. Upload Gradle Build Log
-      # ==========================================
       - name: Upload Gradle Build Log
         if: always()
-
         uses: actions/upload-artifact@v4
-
         with:
-
           name: Taxi-Driver-Gradle-Build-Log
-
           path: gradle-build.log
-
           if-no-files-found: ignore
