@@ -8,17 +8,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # =========================================================
+      # 1. CHECKOUT
+      # =========================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # =========================================================
+      # 2. JAVA 17
+      # =========================================================
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+
+      # =========================================================
+      # 3. ANDROID SDK
+      # =========================================================
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
+
 
       - name: Install Android 36
         run: |
@@ -27,11 +40,19 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
+
+      # =========================================================
+      # 4. GRADLE
+      # =========================================================
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
+
+      # =========================================================
+      # 5. EXTRACT TAXI DRIVER PROJECT
+      # =========================================================
       - name: Extract Taxi Driver 1.0.6 project
         shell: bash
         run: |
@@ -41,6 +62,8 @@ jobs:
 
           if [ ! -f "$ZIP" ]; then
             echo "ERROR: $ZIP not found."
+            echo "Files in repository:"
+            ls -la
             exit 1
           fi
 
@@ -49,9 +72,16 @@ jobs:
 
           unzip -q "$ZIP" -d project
 
-          echo "Project files:"
+          echo "======================================"
+          echo "PROJECT EXTRACTED"
+          echo "======================================"
+
           find project -maxdepth 4 -type f | head -100
 
+
+      # =========================================================
+      # 6. FIND GRADLE PROJECT
+      # =========================================================
       - name: Find Gradle project
         shell: bash
         run: |
@@ -71,9 +101,15 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Gradle project found:"
+          echo "======================================"
+          echo "GRADLE PROJECT FOUND"
           echo "$PROJECT_DIR"
+          echo "======================================"
 
+
+      # =========================================================
+      # 7. CONFIGURE VERSION 1.0.6 / VERSION CODE 106
+      # =========================================================
       - name: Configure version 1.0.6
         shell: bash
         run: |
@@ -90,9 +126,10 @@ jobs:
             exit 1
           fi
 
-          echo "Using:"
+          echo "Using Gradle file:"
           echo "$BUILD_FILE"
 
+          # Groovy Gradle
           sed -i -E \
             's/versionCode[[:space:]]*[=:][[:space:]]*[0-9]+/versionCode 106/g' \
             "$BUILD_FILE"
@@ -101,8 +138,110 @@ jobs:
             's/versionCode[[:space:]]+[0-9]+/versionCode 106/g' \
             "$BUILD_FILE"
 
-          grep -n "versionCode\|versionName\|targetSdk\|compileSdk" "$BUILD_FILE" || true
+          # Kotlin Gradle
+          sed -i -E \
+            's/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = 106/g' \
+            "$BUILD_FILE"
 
+          echo "======================================"
+          echo "VERSION CONFIGURATION"
+          echo "======================================"
+
+          grep -n \
+            "versionCode\|versionName\|targetSdk\|compileSdk" \
+            "$BUILD_FILE" || true
+
+
+      # =========================================================
+      # 8. FORCE RELEASE DEBUGGABLE = FALSE
+      # =========================================================
+      - name: Force release build to be non-debuggable
+        shell: bash
+        run: |
+          set -e
+
+          BUILD_FILE="$PROJECT_DIR/app/build.gradle"
+
+          if [ ! -f "$BUILD_FILE" ]; then
+            BUILD_FILE="$PROJECT_DIR/app/build.gradle.kts"
+          fi
+
+          if [ ! -f "$BUILD_FILE" ]; then
+            echo "ERROR: app Gradle file not found."
+            exit 1
+          fi
+
+          python3 - "$BUILD_FILE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          p = Path(sys.argv[1])
+          s = p.read_text()
+
+          # -----------------------------------------------------
+          # Kotlin DSL
+          # -----------------------------------------------------
+          if p.suffix == ".kts":
+
+              if "debuggable = false" not in s:
+                  if "buildTypes {" in s:
+                      s = s.replace(
+                          "buildTypes {",
+                          """buildTypes {
+              release {
+                  debuggable = false
+              }""",
+                          1
+                      )
+                  else:
+                      s += """
+
+          buildTypes {
+              release {
+                  debuggable = false
+              }
+          }
+          """
+
+          # -----------------------------------------------------
+          # Groovy Gradle
+          # -----------------------------------------------------
+          else:
+
+              if "debuggable false" not in s:
+                  if "buildTypes {" in s:
+                      s = s.replace(
+                          "buildTypes {",
+                          """buildTypes {
+              release {
+                  debuggable false
+              }""",
+                          1
+                      )
+                  else:
+                      s += """
+
+          buildTypes {
+              release {
+                  debuggable false
+              }
+          }
+          """
+
+          p.write_text(s)
+          PY
+
+          echo "======================================"
+          echo "RELEASE BUILD CONFIGURATION"
+          echo "debuggable = false"
+          echo "======================================"
+
+          grep -n -A12 -B2 "buildTypes" "$BUILD_FILE" | head -40 || true
+
+
+      # =========================================================
+      # 9. DECODE EXISTING PLAY UPLOAD KEY
+      # =========================================================
       - name: Decode existing signing keystore
         shell: bash
         env:
@@ -118,10 +257,19 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > "$GITHUB_WORKSPACE/upload-keystore.jks"
 
-          test -s "$GITHUB_WORKSPACE/upload-keystore.jks"
+          if [ ! -s "$GITHUB_WORKSPACE/upload-keystore.jks" ]; then
+            echo "ERROR: Keystore file is empty."
+            exit 1
+          fi
 
-          echo "Existing signing keystore loaded."
+          echo "======================================"
+          echo "SIGNING KEY LOADED"
+          echo "======================================"
 
+
+      # =========================================================
+      # 10. VERIFY SIGNING KEY
+      # =========================================================
       - name: Verify existing signing key
         shell: bash
         env:
@@ -135,8 +283,14 @@ jobs:
             -storepass "$KEYSTORE_PASSWORD" \
             -alias "$KEY_ALIAS"
 
-          echo "Signing key verified."
+          echo "======================================"
+          echo "SIGNING KEY VERIFIED"
+          echo "======================================"
 
+
+      # =========================================================
+      # 11. BUILD RELEASE APK + AAB
+      # =========================================================
       - name: Build release APK and AAB
         shell: bash
         run: |
@@ -144,7 +298,18 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          gradle clean --no-daemon --stacktrace
+          echo "======================================"
+          echo "CLEAN BUILD"
+          echo "======================================"
+
+          gradle clean \
+            --no-daemon \
+            --stacktrace \
+            --console=plain
+
+          echo "======================================"
+          echo "BUILDING RELEASE APK + AAB"
+          echo "======================================"
 
           gradle \
             :app:assembleRelease \
@@ -153,16 +318,24 @@ jobs:
             --stacktrace \
             --console=plain
 
+
+      # =========================================================
+      # 12. FIND GENERATED FILES
+      # =========================================================
       - name: Find APK and AAB
         shell: bash
         run: |
           set -e
 
           APK_FILE=$(find "$PROJECT_DIR/app/build" \
-            -type f -name "*.apk" | head -1)
+            -type f \
+            -name "*.apk" \
+            | head -1)
 
           AAB_FILE=$(find "$PROJECT_DIR/app/build" \
-            -type f -name "*.aab" | head -1)
+            -type f \
+            -name "*.aab" \
+            | head -1)
 
           if [ -z "$APK_FILE" ]; then
             echo "ERROR: APK not found."
@@ -177,10 +350,18 @@ jobs:
           echo "APK_FILE=$APK_FILE" >> "$GITHUB_ENV"
           echo "AAB_FILE=$AAB_FILE" >> "$GITHUB_ENV"
 
+          echo "======================================"
+          echo "GENERATED FILES"
+          echo "======================================"
+
           ls -lh "$APK_FILE"
           ls -lh "$AAB_FILE"
 
-      - name: Sign AAB with old signing key
+
+      # =========================================================
+      # 13. SIGN AAB
+      # =========================================================
+      - name: Sign AAB with existing upload key
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -199,9 +380,15 @@ jobs:
 
           mv "${AAB_FILE}.signed" "$AAB_FILE"
 
-          echo "AAB signed successfully."
+          echo "======================================"
+          echo "AAB SIGNED"
+          echo "======================================"
 
-      - name: Sign APK with old signing key
+
+      # =========================================================
+      # 14. SIGN APK
+      # =========================================================
+      - name: Sign APK with existing upload key
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -222,12 +409,22 @@ jobs:
 
           mv "${APK_FILE}.signed.apk" "$APK_FILE"
 
-          echo "APK signed successfully."
+          echo "======================================"
+          echo "APK SIGNED"
+          echo "======================================"
 
+
+      # =========================================================
+      # 15. VERIFY AAB SIGNATURE
+      # =========================================================
       - name: Verify AAB signature
         shell: bash
         run: |
           set -e
+
+          echo "======================================"
+          echo "VERIFYING AAB SIGNATURE"
+          echo "======================================"
 
           jarsigner \
             -verify \
@@ -237,12 +434,19 @@ jobs:
 
           if ! unzip -l "$AAB_FILE" | \
             grep -Eq 'META-INF/[^/]+\.(RSA|DSA|EC)( |$)'; then
+
             echo "ERROR: AAB signature block not found."
             exit 1
           fi
 
-          echo "AAB SIGNATURE VERIFIED."
+          echo "======================================"
+          echo "AAB SIGNATURE VERIFIED"
+          echo "======================================"
 
+
+      # =========================================================
+      # 16. VERIFY APK SIGNATURE
+      # =========================================================
       - name: Verify APK signature
         shell: bash
         run: |
@@ -253,30 +457,68 @@ jobs:
             --verbose \
             "$APK_FILE"
 
-          echo "APK SIGNATURE VERIFIED."
+          echo "======================================"
+          echo "APK SIGNATURE VERIFIED"
+          echo "======================================"
 
+
+      # =========================================================
+      # 17. SHOW FINAL BUILD INFORMATION
+      # =========================================================
+      - name: Show final Play Store build information
+        shell: bash
+        run: |
+          set -e
+
+          echo ""
+          echo "=============================================="
+          echo "       TAXI DRIVER PLAY STORE BUILD"
+          echo "=============================================="
+          echo ""
+          echo "VERSION NAME : 1.0.6"
+          echo "VERSION CODE : 106"
+          echo "TARGET SDK   : 36"
+          echo "RELEASE      : YES"
+          echo "DEBUGGABLE   : FALSE"
+          echo "AAB SIGNED   : YES"
+          echo "APK SIGNED   : YES"
+          echo ""
+          echo "=============================================="
+
+          ls -lh "$AAB_FILE"
+          ls -lh "$APK_FILE"
+
+
+      # =========================================================
+      # 18. PREPARE FINAL PLAY STORE FILES
+      # =========================================================
       - name: Prepare final Play Store files
         shell: bash
         run: |
           set -e
 
-          cp "$AAB_FILE" Taxi-Driver-1.0.6-Direct-PDF.aab
-          cp "$APK_FILE" Taxi-Driver-1.0.6-Direct-PDF.apk
+          cp "$AAB_FILE" \
+            Taxi-Driver-1.0.6-Signed-106.aab
 
-          echo "======================================"
-          echo "PLAY STORE BUILD READY"
-          echo "VERSION CODE: 106"
-          echo "TARGET SDK: 36"
-          echo "SIGNED: YES"
-          echo "======================================"
+          cp "$APK_FILE" \
+            Taxi-Driver-1.0.6-Signed-106.apk
 
-          ls -lh Taxi-Driver-1.0.6-Direct-PDF.aab
-          ls -lh Taxi-Driver-1.0.6-Direct-PDF.apk
+          echo "=============================================="
+          echo "PLAY STORE FILES READY"
+          echo "=============================================="
 
-      - name: Upload signed files
+          ls -lh \
+            Taxi-Driver-1.0.6-Signed-106.aab \
+            Taxi-Driver-1.0.6-Signed-106.apk
+
+
+      # =========================================================
+      # 19. UPLOAD ARTIFACT
+      # =========================================================
+      - name: Upload signed Play Store files
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.0.6-Signed
+          name: Taxi-Driver-1.0.6-Signed-106
           path: |
-            Taxi-Driver-1.0.6-Direct-PDF.aab
-            Taxi-Driver-1.0.6-Direct-PDF.apk
+            Taxi-Driver-1.0.6-Signed-106.aab
+            Taxi-Driver-1.0.6-Signed-106.apk
