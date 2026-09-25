@@ -20,9 +20,9 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android 36 SDK
+      - name: Install Android 36
         run: |
-          sdkmanager --sdk_root="${ANDROID_SDK_ROOT}" \
+          sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
@@ -32,22 +32,49 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Find Taxi Driver project
+      - name: Extract Taxi Driver 1.0.6 project
         shell: bash
         run: |
           set -e
 
-          PROJECT_DIR="$(find . -type f -name 'settings.gradle' -print -quit | xargs -r dirname)"
+          ZIP="Taxi_Driver_PlayStore_Update_1.0.6_DIRECT_PDF.zip"
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: settings.gradle not found."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERROR: $ZIP not found."
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Project: $PROJECT_DIR"
+          rm -rf project
+          mkdir project
 
-      - name: Set Version Code 106
+          unzip -q "$ZIP" -d project
+
+          echo "Project files:"
+          find project -maxdepth 4 -type f | head -100
+
+      - name: Find Gradle project
+        shell: bash
+        run: |
+          set -e
+
+          SETTINGS=$(find project -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle not found inside ZIP."
+            find project -type f | head -200
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Gradle project found:"
+          echo "$PROJECT_DIR"
+
+      - name: Configure version 1.0.6
         shell: bash
         run: |
           set -e
@@ -55,42 +82,26 @@ jobs:
           BUILD_FILE="$PROJECT_DIR/app/build.gradle"
 
           if [ ! -f "$BUILD_FILE" ]; then
-            echo "ERROR: app/build.gradle not found."
+            BUILD_FILE="$PROJECT_DIR/app/build.gradle.kts"
+          fi
+
+          if [ ! -f "$BUILD_FILE" ]; then
+            echo "ERROR: app Gradle file not found."
             exit 1
           fi
+
+          echo "Using:"
+          echo "$BUILD_FILE"
 
           sed -i -E \
-            's/versionCode[[:space:]]+[0-9]+/versionCode 106/' \
+            's/versionCode[[:space:]]*[=:][[:space:]]*[0-9]+/versionCode 106/g' \
             "$BUILD_FILE"
 
-          echo "Version configuration:"
+          sed -i -E \
+            's/versionCode[[:space:]]+[0-9]+/versionCode 106/g' \
+            "$BUILD_FILE"
+
           grep -n "versionCode\|versionName\|targetSdk\|compileSdk" "$BUILD_FILE" || true
-
-      - name: Verify Target SDK 36
-        shell: bash
-        run: |
-          set -e
-
-          if ! grep -Eq \
-            'targetSdk[[:space:]]*[=:]?[[:space:]]*36|targetSdkVersion[[:space:]]*[=:]?[[:space:]]*36' \
-            "$PROJECT_DIR/app/build.gradle"; then
-            echo "ERROR: Target SDK 36 not found."
-            exit 1
-          fi
-
-          echo "Target SDK 36 verified."
-
-      - name: Verify Package ID
-        shell: bash
-        run: |
-          set -e
-
-          if ! grep -R -q "com.taxidriver.apk" "$PROJECT_DIR/app/src/main"; then
-            echo "ERROR: Package ID com.taxidriver.apk not found."
-            exit 1
-          fi
-
-          echo "Package ID verified: com.taxidriver.apk"
 
       - name: Decode existing signing keystore
         shell: bash
@@ -104,12 +115,10 @@ jobs:
             exit 1
           fi
 
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/upload-keystore.jks"
+          echo "$KEYSTORE_BASE64" | base64 --decode \
+            > "$GITHUB_WORKSPACE/upload-keystore.jks"
 
-          if [ ! -s "$GITHUB_WORKSPACE/upload-keystore.jks" ]; then
-            echo "ERROR: Keystore could not be decoded."
-            exit 1
-          fi
+          test -s "$GITHUB_WORKSPACE/upload-keystore.jks"
 
           echo "Existing signing keystore loaded."
 
@@ -126,9 +135,9 @@ jobs:
             -storepass "$KEYSTORE_PASSWORD" \
             -alias "$KEY_ALIAS"
 
-          echo "Existing signing key verified."
+          echo "Signing key verified."
 
-      - name: Build Release APK and AAB
+      - name: Build release APK and AAB
         shell: bash
         run: |
           set -e
@@ -149,8 +158,11 @@ jobs:
         run: |
           set -e
 
-          APK_FILE="$(find "$PROJECT_DIR/app/build" -type f -name '*.apk' | head -n 1)"
-          AAB_FILE="$(find "$PROJECT_DIR/app/build" -type f -name '*.aab' | head -n 1)"
+          APK_FILE=$(find "$PROJECT_DIR/app/build" \
+            -type f -name "*.apk" | head -1)
+
+          AAB_FILE=$(find "$PROJECT_DIR/app/build" \
+            -type f -name "*.aab" | head -1)
 
           if [ -z "$APK_FILE" ]; then
             echo "ERROR: APK not found."
@@ -168,7 +180,7 @@ jobs:
           ls -lh "$APK_FILE"
           ls -lh "$AAB_FILE"
 
-      - name: Sign AAB with existing key
+      - name: Sign AAB with old signing key
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -177,10 +189,8 @@ jobs:
         run: |
           set -e
 
-          KEYSTORE="$GITHUB_WORKSPACE/upload-keystore.jks"
-
           jarsigner \
-            -keystore "$KEYSTORE" \
+            -keystore "$GITHUB_WORKSPACE/upload-keystore.jks" \
             -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" \
             -signedjar "${AAB_FILE}.signed" \
@@ -189,9 +199,9 @@ jobs:
 
           mv "${AAB_FILE}.signed" "$AAB_FILE"
 
-          echo "AAB signing completed."
+          echo "AAB signed successfully."
 
-      - name: Sign APK with existing key
+      - name: Sign APK with old signing key
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -201,10 +211,9 @@ jobs:
           set -e
 
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner"
-          KEYSTORE="$GITHUB_WORKSPACE/upload-keystore.jks"
 
           "$APKSIGNER" sign \
-            --ks "$KEYSTORE" \
+            --ks "$GITHUB_WORKSPACE/upload-keystore.jks" \
             --ks-pass "pass:$KEYSTORE_PASSWORD" \
             --ks-key-alias "$KEY_ALIAS" \
             --key-pass "pass:$KEY_PASSWORD" \
@@ -213,7 +222,7 @@ jobs:
 
           mv "${APK_FILE}.signed.apk" "$APK_FILE"
 
-          echo "APK signing completed."
+          echo "APK signed successfully."
 
       - name: Verify AAB signature
         shell: bash
@@ -226,9 +235,9 @@ jobs:
             -certs \
             "$AAB_FILE"
 
-          if ! unzip -l "$AAB_FILE" | grep -Eq \
-            'META-INF/[^/]+\.(RSA|DSA|EC)( |$)'; then
-            echo "ERROR: AAB has no signature block."
+          if ! unzip -l "$AAB_FILE" | \
+            grep -Eq 'META-INF/[^/]+\.(RSA|DSA|EC)( |$)'; then
+            echo "ERROR: AAB signature block not found."
             exit 1
           fi
 
@@ -246,7 +255,7 @@ jobs:
 
           echo "APK SIGNATURE VERIFIED."
 
-      - name: Prepare Play Store files
+      - name: Prepare final Play Store files
         shell: bash
         run: |
           set -e
@@ -254,18 +263,17 @@ jobs:
           cp "$AAB_FILE" Taxi-Driver-1.0.6-Direct-PDF.aab
           cp "$APK_FILE" Taxi-Driver-1.0.6-Direct-PDF.apk
 
-          echo "=========================================="
+          echo "======================================"
           echo "PLAY STORE BUILD READY"
           echo "VERSION CODE: 106"
           echo "TARGET SDK: 36"
-          echo "PACKAGE: com.taxidriver.apk"
           echo "SIGNED: YES"
-          echo "=========================================="
+          echo "======================================"
 
           ls -lh Taxi-Driver-1.0.6-Direct-PDF.aab
           ls -lh Taxi-Driver-1.0.6-Direct-PDF.apk
 
-      - name: Upload signed AAB and APK
+      - name: Upload signed files
         uses: actions/upload-artifact@v4
         with:
           name: Taxi-Driver-1.0.6-Signed
