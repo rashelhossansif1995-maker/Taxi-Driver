@@ -374,10 +374,14 @@ jobs:
           s = file.read_text(encoding="utf-8")
 
           replacements = {
-              '"One-time payment"': '""',
-              '"Auto-renewing"': '""',
-              "'One-time payment'": "''",
-              "'Auto-renewing'": "''",
+              'labels.add("Lifetime — " + lifetime + "\\nOne-time payment");':
+                  'labels.add("Lifetime — " + lifetime);',
+
+              'labels.add("Monthly — " + monthly + "\\nAuto-renewing");':
+                  'labels.add("Monthly — " + monthly);',
+
+              'labels.add("Yearly — " + yearly + "\\nAuto-renewing");':
+                  'labels.add("Yearly — " + yearly);',
           }
 
           changed = False
@@ -388,12 +392,14 @@ jobs:
                   changed = True
                   print("Replaced:", old)
 
+          if not changed:
+              print("ERROR: Premium plan label lines were not found.")
+              print("Expected native Premium label source was not detected.")
+              raise SystemExit(1)
+
           file.write_text(s, encoding="utf-8")
 
-          if changed:
-              print("SUCCESS: Payment description text hidden.")
-          else:
-              print("WARNING: Exact payment description text was not found.")
+          print("SUCCESS: One-time payment and Auto-renewing hidden.")
           PY
 
           echo "Premium UI patch completed."
