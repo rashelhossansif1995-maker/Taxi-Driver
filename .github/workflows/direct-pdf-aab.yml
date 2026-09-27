@@ -9,24 +9,15 @@ jobs:
 
     steps:
 
-      # ==========================================
-      # 1. CHECKOUT
-      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ==========================================
-      # 2. JAVA 17
-      # ==========================================
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # ==========================================
-      # 3. ANDROID SDK 36
-      # ==========================================
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
@@ -37,16 +28,13 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      # ==========================================
-      # 4. GRADLE 8.10.2
-      # ==========================================
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
       # ==========================================
-      # 5. EXTRACT EXISTING V108 PREMIUM ZIP
+      # EXTRACT PROJECT
       # ==========================================
       - name: Extract Premium 3 Plans project
         shell: bash
@@ -55,14 +43,7 @@ jobs:
 
           ZIP="Taxi_Driver_PlayStore_Update_1.0.6_PREMIUM_3PLANS_v108_FIXED.zip"
 
-          echo "Looking for:"
-          echo "$ZIP"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERROR: ZIP file not found."
-            ls -lah
-            exit 1
-          fi
+          test -f "$ZIP"
 
           rm -rf project
           mkdir -p project
@@ -71,10 +52,8 @@ jobs:
 
           echo "PROJECT EXTRACTED"
 
-          find project -maxdepth 4 -type f | head -150
-
       # ==========================================
-      # 6. FIND GRADLE PROJECT
+      # FIND GRADLE PROJECT
       # ==========================================
       - name: Find Gradle project
         shell: bash
@@ -85,21 +64,16 @@ jobs:
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             -print -quit)
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: settings.gradle not found."
-            find project -type f | head -250
-            exit 1
-          fi
+          test -n "$SETTINGS"
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "PROJECT DIR:"
-          echo "$PROJECT_DIR"
+          echo "PROJECT DIR = $PROJECT_DIR"
 
       # ==========================================
-      # 7. FIND APP GRADLE
+      # FIND APP GRADLE
       # ==========================================
       - name: Find app Gradle file
         shell: bash
@@ -112,19 +86,14 @@ jobs:
             BUILD_FILE="$PROJECT_DIR/app/build.gradle.kts"
           fi
 
-          if [ ! -f "$BUILD_FILE" ]; then
-            echo "ERROR: app Gradle file not found."
-            find "$PROJECT_DIR" -maxdepth 4 -type f
-            exit 1
-          fi
+          test -f "$BUILD_FILE"
 
           echo "BUILD_FILE=$BUILD_FILE" >> "$GITHUB_ENV"
 
-          echo "BUILD FILE:"
-          echo "$BUILD_FILE"
+          echo "BUILD FILE = $BUILD_FILE"
 
       # ==========================================
-      # 8. VERSION 1.0.9 / CODE 109
+      # VERSION 1.0.9 / CODE 109
       # ==========================================
       - name: Configure version 1.0.9 code 109
         shell: bash
@@ -157,12 +126,8 @@ jobs:
           echo "VERSION NAME = 1.0.9"
           echo "VERSION CODE = 109"
 
-          grep -n \
-            "versionCode\|versionName" \
-            "$BUILD_FILE" || true
-
       # ==========================================
-      # 9. MIN SDK 23
+      # MIN SDK 23
       # ==========================================
       - name: Force minimum SDK 23
         shell: bash
@@ -198,10 +163,8 @@ jobs:
           p.write_text(s)
           PY
 
-          echo "MIN SDK = 23"
-
       # ==========================================
-      # 10. TARGET SDK 36
+      # TARGET SDK 36
       # ==========================================
       - name: Force target SDK 36
         shell: bash
@@ -240,33 +203,69 @@ jobs:
           echo "TARGET SDK = 36"
 
       # ==========================================
-      # 11. GOOGLE MOBILE ADS 24.8.0
+      # ADS SDK 24.8.0
       # ==========================================
       - name: Use Google Mobile Ads SDK 24.8.0
         shell: bash
         run: |
           set -e
 
-          while IFS= read -r FILE; do
+          grep -RIl \
+            "com.google.android.gms:play-services-ads:25.5.0" \
+            "$PROJECT_DIR" \
+            --include="*.gradle" \
+            --include="*.gradle.kts" \
+            2>/dev/null \
+          | while read -r FILE; do
+              sed -i \
+                's/com\.google\.android\.gms:play-services-ads:25\.5\.0/com.google.android.gms:play-services-ads:24.8.0/g' \
+                "$FILE"
+            done
 
-            sed -i \
-              's/com\.google\.android\.gms:play-services-ads:25\.5\.0/com.google.android.gms:play-services-ads:24.8.0/g' \
-              "$FILE"
-
-          done < <(
-            grep -RIl \
-              "25\.5\.0" \
-              "$PROJECT_DIR" \
-              --include="*.gradle" \
-              --include="*.gradle.kts" \
-              --include="*.toml" \
-              || true
-          )
-
-          echo "GOOGLE MOBILE ADS = 24.8.0"
+          echo "ADS SDK = 24.8.0"
 
       # ==========================================
-      # 12. DEBUGGABLE FALSE
+      # IMPORTANT:
+      # USE NEW PREMIUM DESIGN MAINACTIVITY
+      # ==========================================
+      - name: Install Premium Design MainActivity
+        shell: bash
+        run: |
+          set -e
+
+          DESIGN_FILE="$GITHUB_WORKSPACE/MainActivity_Premium_Design_1.0.9.java"
+
+          if [ ! -f "$DESIGN_FILE" ]; then
+            echo "ERROR: MainActivity_Premium_Design_1.0.9.java not found."
+            exit 1
+          fi
+
+          MAIN_FILE=$(find "$PROJECT_DIR/app/src/main/java" \
+            -type f \
+            -name "MainActivity.java" \
+            -print -quit)
+
+          if [ -z "$MAIN_FILE" ]; then
+            echo "ERROR: Original MainActivity.java not found."
+            exit 1
+          fi
+
+          echo "Original MainActivity:"
+          echo "$MAIN_FILE"
+
+          cp "$DESIGN_FILE" "$MAIN_FILE"
+
+          echo ""
+          echo "=========================================="
+          echo "NEW PREMIUM DESIGN INSTALLED"
+          echo "=========================================="
+
+          grep -n \
+            "Taxi Driver Premium\|Full Features\|No Ads\|Use Everywhere\|Lifetime\|Monthly\|Yearly" \
+            "$MAIN_FILE" || true
+
+      # ==========================================
+      # FORCE RELEASE DEBUGGABLE FALSE
       # ==========================================
       - name: Force release debuggable false
         shell: bash
@@ -296,138 +295,29 @@ jobs:
           echo "DEBUGGABLE = FALSE"
 
       # ==========================================
-      # 13. FIX PREMIUM BILLING CALLBACK
-      # ==========================================
-      - name: Fix Premium Billing callback
-        shell: bash
-        run: |
-          set -e
-
-          MAIN_FILE=$(find "$PROJECT_DIR" \
-            -type f \
-            -path "*/src/main/java/com/taxidriver/apk/MainActivity.java" \
-            -print -quit)
-
-          if [ -z "$MAIN_FILE" ]; then
-            echo "ERROR: MainActivity.java not found."
-            exit 1
-          fi
-
-          echo "MainActivity:"
-          echo "$MAIN_FILE"
-
-          python3 - "$MAIN_FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          p = Path(sys.argv[1])
-          s = p.read_text()
-
-          old = "queryAllPremiumProducts(this::showPremiumPlans);"
-          new = "queryAllPremiumProducts(MainActivity.this::showPremiumPlans);"
-
-          first = s.find(old)
-
-          if first != -1:
-              s = (
-                  s[:first]
-                  + new
-                  + s[first + len(old):]
-              )
-
-              p.write_text(s)
-              print("FIRST PREMIUM CALLBACK FIXED.")
-          else:
-              print("No callback replacement needed.")
-          PY
-
-          echo "Premium callbacks:"
-          grep -n \
-            "queryAllPremiumProducts" \
-            "$MAIN_FILE" || true
-
-      # ==========================================
-      # 13.5 HIDE PAYMENT DESCRIPTION TEXT
-      # ==========================================
-      - name: Hide One-time payment and Auto-renewing
-        shell: bash
-        run: |
-          set -e
-
-          echo "Hiding Premium payment description text..."
-
-          MAIN_FILE=$(find "$PROJECT_DIR" \
-            -type f \
-            -name "MainActivity.java" \
-            -print -quit)
-
-          if [ -z "$MAIN_FILE" ]; then
-            echo "ERROR: MainActivity.java not found."
-            exit 1
-          fi
-
-          python3 - "$MAIN_FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          file = Path(sys.argv[1])
-          s = file.read_text(encoding="utf-8")
-
-          replacements = {
-              'labels.add("Lifetime — " + lifetime + "\\nOne-time payment");':
-                  'labels.add("Lifetime — " + lifetime);',
-
-              'labels.add("Monthly — " + monthly + "\\nAuto-renewing");':
-                  'labels.add("Monthly — " + monthly);',
-
-              'labels.add("Yearly — " + yearly + "\\nAuto-renewing");':
-                  'labels.add("Yearly — " + yearly);',
-          }
-
-          changed = False
-
-          for old, new in replacements.items():
-              if old in s:
-                  s = s.replace(old, new)
-                  changed = True
-                  print("Replaced:", old)
-
-          if not changed:
-              print("ERROR: Premium plan label lines were not found.")
-              print("Expected native Premium label source was not detected.")
-              raise SystemExit(1)
-
-          file.write_text(s, encoding="utf-8")
-
-          print("SUCCESS: One-time payment and Auto-renewing hidden.")
-          PY
-
-          echo "Premium UI patch completed."
-
-      # ==========================================
-      # 14. VERIFY PREMIUM PRODUCT IDS
+      # VERIFY PREMIUM IDS
       # ==========================================
       - name: Check Premium 3 Plan IDs
         shell: bash
         run: |
           set -e
 
-          echo "PREMIUM PRODUCT IDS"
+          MAIN_FILE=$(find "$PROJECT_DIR/app/src/main/java" \
+            -type f \
+            -name "MainActivity.java" \
+            -print -quit)
 
-          grep -RIn \
-            "taxi_driver_premium" \
-            "$PROJECT_DIR" \
-            --exclude-dir=build \
-            || true
+          echo "Checking Premium IDs..."
+
+          grep -n "taxi_driver_premium" "$MAIN_FILE"
 
           echo ""
-          echo "Expected:"
           echo "Lifetime = taxi_driver_premium"
           echo "Monthly  = taxi_driver_premium_monthly"
           echo "Yearly   = taxi_driver_premium_yearly"
 
       # ==========================================
-      # 15. LOAD EXISTING SIGNING KEY
+      # SIGNING KEY
       # ==========================================
       - name: Decode existing signing keystore
         shell: bash
@@ -436,10 +326,7 @@ jobs:
         run: |
           set -e
 
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "ERROR: KEYSTORE_BASE64 secret missing."
-            exit 1
-          fi
+          test -n "$KEYSTORE_BASE64"
 
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > "$GITHUB_WORKSPACE/upload-keystore.jks"
@@ -448,9 +335,6 @@ jobs:
 
           echo "SIGNING KEY LOADED"
 
-      # ==========================================
-      # 16. VERIFY SIGNING KEY
-      # ==========================================
       - name: Verify signing key
         shell: bash
         env:
@@ -467,7 +351,7 @@ jobs:
           echo "SIGNING KEY VERIFIED"
 
       # ==========================================
-      # 17. BUILD RELEASE APK + AAB
+      # BUILD
       # ==========================================
       - name: Build release APK and AAB
         shell: bash
@@ -489,7 +373,7 @@ jobs:
             --console=plain
 
       # ==========================================
-      # 18. FIND APK + AAB
+      # FIND FILES
       # ==========================================
       - name: Find APK and AAB
         shell: bash
@@ -506,15 +390,8 @@ jobs:
             -name "*.aab" \
             | head -1)
 
-          if [ -z "$APK_FILE" ]; then
-            echo "ERROR: APK not found."
-            exit 1
-          fi
-
-          if [ -z "$AAB_FILE" ]; then
-            echo "ERROR: AAB not found."
-            exit 1
-          fi
+          test -n "$APK_FILE"
+          test -n "$AAB_FILE"
 
           echo "APK_FILE=$APK_FILE" >> "$GITHUB_ENV"
           echo "AAB_FILE=$AAB_FILE" >> "$GITHUB_ENV"
@@ -523,7 +400,7 @@ jobs:
           ls -lh "$AAB_FILE"
 
       # ==========================================
-      # 19. SIGN AAB
+      # SIGN AAB
       # ==========================================
       - name: Sign AAB
         shell: bash
@@ -547,7 +424,7 @@ jobs:
           echo "AAB SIGNED"
 
       # ==========================================
-      # 20. SIGN APK
+      # SIGN APK
       # ==========================================
       - name: Sign APK
         shell: bash
@@ -573,7 +450,7 @@ jobs:
           echo "APK SIGNED"
 
       # ==========================================
-      # 21. VERIFY AAB
+      # VERIFY SIGNATURES
       # ==========================================
       - name: Verify AAB signature
         shell: bash
@@ -588,9 +465,6 @@ jobs:
 
           echo "AAB SIGNATURE VERIFIED"
 
-      # ==========================================
-      # 22. VERIFY APK
-      # ==========================================
       - name: Verify APK signature
         shell: bash
         run: |
@@ -604,7 +478,7 @@ jobs:
           echo "APK SIGNATURE VERIFIED"
 
       # ==========================================
-      # 23. FINAL BUILD INFO
+      # FINAL INFO
       # ==========================================
       - name: Show final Play Store build
         shell: bash
@@ -622,19 +496,19 @@ jobs:
           echo "AAB SIGNED   : YES"
           echo "APK SIGNED   : YES"
           echo ""
-          echo "PREMIUM:"
-          echo "Lifetime : taxi_driver_premium"
-          echo "Monthly  : taxi_driver_premium_monthly"
-          echo "Yearly   : taxi_driver_premium_yearly"
+          echo "PREMIUM DESIGN: INSTALLED"
           echo ""
-          echo "PAYMENT DESCRIPTION:"
+          echo "Lifetime : AED 19.99"
+          echo "Monthly  : AED 2.09"
+          echo "Yearly   : AED 9.99"
+          echo ""
           echo "One-time payment : HIDDEN"
           echo "Auto-renewing    : HIDDEN"
           echo ""
           echo "=============================================="
 
       # ==========================================
-      # 24. PREPARE FINAL FILES
+      # FINAL FILE NAMES
       # ==========================================
       - name: Prepare final Play Store files
         shell: bash
@@ -652,12 +526,12 @@ jobs:
             Taxi-Driver-1.0.9-Signed-109-API23.apk
 
       # ==========================================
-      # 25. UPLOAD ARTIFACT
+      # ARTIFACT
       # ==========================================
       - name: Upload signed Play Store files
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.0.9-Signed-109-API23
+          name: Taxi-Driver-1.0.9-Signed-109-API23-Premium-Design
           path: |
             Taxi-Driver-1.0.9-Signed-109-API23.aab
             Taxi-Driver-1.0.9-Signed-109-API23.apk
