@@ -9,25 +9,16 @@ jobs:
 
     steps:
 
-      # ==========================================
-      # 1. CHECKOUT
-      # ==========================================
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ==========================================
-      # 2. JAVA 17
-      # ==========================================
-      - name: Set up JDK 17
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      # ==========================================
-      # 3. ANDROID SDK
-      # ==========================================
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
       - name: Install Android 36
@@ -37,42 +28,27 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      # ==========================================
-      # 4. GRADLE
-      # ==========================================
-      - name: Set up Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.10.2'
+          gradle-version: "8.10.2"
 
-      # ==========================================
-      # 5. EXTRACT PROJECT
-      # ==========================================
-      - name: Extract Premium 3 Plans project
-        shell: bash
+      - name: Extract Final Premium Project
         run: |
           set -e
 
-          ZIP="Taxi_Driver_PlayStore_Update_1.0.6_PREMIUM_3PLANS_v108_FIXED.zip"
+          ZIP="Taxi_Driver_1.0.9_PREMIUM_FINAL_DESIGN_PROJECT.zip"
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERROR: Project ZIP not found:"
-            echo "$ZIP"
-            exit 1
-          fi
+          test -f "$ZIP"
 
           rm -rf project
           mkdir -p project
 
           unzip -q "$ZIP" -d project
 
-          echo "PROJECT EXTRACTED SUCCESSFULLY"
+          echo "PROJECT EXTRACTED"
 
-      # ==========================================
-      # 6. FIND GRADLE PROJECT
-      # ==========================================
-      - name: Find Gradle project
-        shell: bash
+      - name: Find Android Project
         run: |
           set -e
 
@@ -80,51 +56,33 @@ jobs:
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             -print -quit)
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: settings.gradle not found."
-            exit 1
-          fi
+          test -n "$SETTINGS"
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "PROJECT DIR:"
+          echo "Android project:"
           echo "$PROJECT_DIR"
 
-      # ==========================================
-      # 7. FIND APP GRADLE
-      # ==========================================
-      - name: Find app Gradle file
-        shell: bash
+      - name: Verify Final Premium Project
         run: |
           set -e
 
-          BUILD_FILE="$PROJECT_DIR/app/build.gradle"
+          test -f "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
+          test -f "$PROJECT_DIR/app/src/main/res/drawable-nodpi/taxi_driver_premium_logo.png"
 
-          if [ ! -f "$BUILD_FILE" ]; then
-            BUILD_FILE="$PROJECT_DIR/app/build.gradle.kts"
-          fi
+          echo "Premium project verified."
+          echo "MainActivity: OK"
+          echo "Premium HTML: OK"
+          echo "Premium logo: OK"
 
-          if [ ! -f "$BUILD_FILE" ]; then
-            echo "ERROR: app Gradle file not found."
-            exit 1
-          fi
-
-          echo "BUILD_FILE=$BUILD_FILE" >> "$GITHUB_ENV"
-
-          echo "BUILD FILE:"
-          echo "$BUILD_FILE"
-
-      # ==========================================
-      # 8. VERSION 1.0.9 / CODE 109
-      # ==========================================
-      - name: Configure version 1.0.9 code 109
-        shell: bash
+      - name: Configure Play Store Version
         run: |
           set -e
 
-          python3 - "$BUILD_FILE" <<'PY'
+          python3 - "$PROJECT_DIR/app/build.gradle" <<'PY'
           import sys
           import re
           from pathlib import Path
@@ -133,94 +91,31 @@ jobs:
           s = p.read_text()
 
           s = re.sub(
-              r'\bversionCode\s*(?:=)?\s*\d+',
+              r'versionCode\s+\d+',
               'versionCode 109',
               s
           )
 
           s = re.sub(
-              r'\bversionName\s*(?:=)?\s*["\'][^"\']+["\']',
+              r'versionName\s+["\'][^"\']+["\']',
               'versionName "1.0.9"',
               s
           )
 
-          p.write_text(s)
-          PY
-
-          echo "================================"
-          echo "VERSION NAME = 1.0.9"
-          echo "VERSION CODE = 109"
-          echo "================================"
-
-      # ==========================================
-      # 9. MIN SDK 23
-      # ==========================================
-      - name: Force minimum SDK 23
-        shell: bash
-        run: |
-          set -e
-
-          python3 - "$BUILD_FILE" <<'PY'
-          import sys
-          import re
-          from pathlib import Path
-
-          p = Path(sys.argv[1])
-          s = p.read_text()
-
           s = re.sub(
-              r'\bminSdkVersion\s*[=:]?\s*\d+',
-              'minSdkVersion 23',
+              r'compileSdk\s+\d+',
+              'compileSdk 36',
               s
           )
 
           s = re.sub(
-              r'\bminSdk\s*=\s*\d+',
-              'minSdk = 23',
-              s
-          )
-
-          s = re.sub(
-              r'\bminSdk\s+\d+',
+              r'minSdk\s+\d+',
               'minSdk 23',
               s
           )
 
-          p.write_text(s)
-          PY
-
-          echo "MIN SDK = 23"
-
-      # ==========================================
-      # 10. TARGET SDK 36
-      # ==========================================
-      - name: Force target SDK 36
-        shell: bash
-        run: |
-          set -e
-
-          python3 - "$BUILD_FILE" <<'PY'
-          import sys
-          import re
-          from pathlib import Path
-
-          p = Path(sys.argv[1])
-          s = p.read_text()
-
           s = re.sub(
-              r'\btargetSdkVersion\s*[=:]?\s*\d+',
-              'targetSdkVersion 36',
-              s
-          )
-
-          s = re.sub(
-              r'\btargetSdk\s*=\s*\d+',
-              'targetSdk = 36',
-              s
-          )
-
-          s = re.sub(
-              r'\btargetSdk\s+\d+',
+              r'targetSdk\s+\d+',
               'targetSdk 36',
               s
           )
@@ -228,286 +123,36 @@ jobs:
           p.write_text(s)
           PY
 
+          echo "VERSION = 1.0.9"
+          echo "VERSION CODE = 109"
           echo "TARGET SDK = 36"
 
-      # ==========================================
-      # 11. ADS SDK - SAFE
-      # ==========================================
-      - name: Use Google Mobile Ads SDK 24.8.0
-        shell: bash
+      - name: Build Signed Release AAB
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
 
-          echo "Checking Google Mobile Ads SDK..."
+          gradle clean bundleRelease \
+            --no-daemon \
+            --stacktrace \
+            --console=plain
 
-          FOUND=0
-
-          while IFS= read -r FILE; do
-
-            FOUND=1
-
-            echo "Updating:"
-            echo "$FILE"
-
-            sed -i \
-              's/com\.google\.android\.gms:play-services-ads:25\.5\.0/com.google.android.gms:play-services-ads:24.8.0/g' \
-              "$FILE"
-
-          done < <(
-            grep -RIl \
-              "com.google.android.gms:play-services-ads:25.5.0" \
-              "$PROJECT_DIR" \
-              --include="*.gradle" \
-              --include="*.gradle.kts" \
-              2>/dev/null || true
-          )
-
-          if [ "$FOUND" = "0" ]; then
-            echo "No Ads SDK 25.5.0 found."
-            echo "Existing Ads SDK is already compatible."
-          else
-            echo "Google Mobile Ads SDK replacement completed."
-          fi
-
-          echo "ADS SDK CHECK PASSED"
-
-      # ==========================================
-      # 12. INSTALL NEW PREMIUM DESIGN
-      # ==========================================
-      - name: Install Premium Design MainActivity
-        shell: bash
-        run: |
-          set -e
-
-          DESIGN_FILE="$GITHUB_WORKSPACE/MainActivity_Premium_Design_1.0.9.java"
-
-          if [ ! -f "$DESIGN_FILE" ]; then
-            echo "ERROR:"
-            echo "MainActivity_Premium_Design_1.0.9.java not found."
-            echo ""
-            echo "Files in repository:"
-            ls -lah
-            exit 1
-          fi
-
-          MAIN_FILE=$(find "$PROJECT_DIR/app/src/main/java" \
-            -type f \
-            -name "MainActivity.java" \
-            -print -quit)
-
-          if [ -z "$MAIN_FILE" ]; then
-            echo "ERROR: Original MainActivity.java not found."
-            exit 1
-          fi
-
-          echo "Original MainActivity:"
-          echo "$MAIN_FILE"
-
-          cp "$DESIGN_FILE" "$MAIN_FILE"
-
-          echo ""
-          echo "=========================================="
-          echo "PREMIUM DESIGN INSTALLED"
-          echo "=========================================="
-
-      # ==========================================
-      # 13. FIX PREMIUM CALLBACK
-      # ==========================================
-      - name: Fix Premium callback
-        shell: bash
-        run: |
-          set -e
-
-          MAIN_FILE=$(find "$PROJECT_DIR/app/src/main/java" \
-            -type f \
-            -name "MainActivity.java" \
-            -print -quit)
-
-          python3 - "$MAIN_FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          p = Path(sys.argv[1])
-          s = p.read_text(encoding="utf-8")
-
-          old = "queryAllPremiumProducts(this::showPremiumPlans);"
-          new = "queryAllPremiumProducts(MainActivity.this::showPremiumPlans);"
-
-          count = s.count(old)
-
-          if count > 0:
-              s = s.replace(old, new)
-              p.write_text(s, encoding="utf-8")
-              print("Premium callback fixed:", count)
-          else:
-              print("No incorrect callback found.")
-          PY
-
-          echo "Premium callback check completed."
-
-      # ==========================================
-      # 14. VERIFY PREMIUM DESIGN
-      # ==========================================
-      - name: Verify Premium Design
-        shell: bash
-        run: |
-          set -e
-
-          MAIN_FILE=$(find "$PROJECT_DIR/app/src/main/java" \
-            -type f \
-            -name "MainActivity.java" \
-            -print -quit)
-
-          echo "Checking Premium UI..."
-
-          grep -n \
-            "Taxi Driver\|Premium\|Full Features\|No Ads\|Use Everywhere\|Lifetime\|Monthly\|Yearly" \
-            "$MAIN_FILE" \
-            || true
-
-          echo ""
-          echo "Checking Product IDs..."
-
-          grep -n \
-            "taxi_driver_premium" \
-            "$MAIN_FILE"
-
-          echo ""
-          echo "PREMIUM DESIGN SOURCE CHECK PASSED"
-
-      # ==========================================
-      # 15. FORCE RELEASE DEBUGGABLE FALSE
-      # ==========================================
-      - name: Force release debuggable false
-        shell: bash
-        run: |
-          set -e
-
-          python3 - "$BUILD_FILE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          p = Path(sys.argv[1])
-          s = p.read_text()
-
-          s = s.replace(
-              "debuggable true",
-              "debuggable false"
-          )
-
-          s = s.replace(
-              "debuggable = true",
-              "debuggable = false"
-          )
-
-          p.write_text(s)
-          PY
-
-          echo "DEBUGGABLE = FALSE"
-
-      # ==========================================
-      # 16. VERIFY SIGNING KEY
-      # ==========================================
-      - name: Decode existing signing keystore
-        shell: bash
+      - name: Prepare Signing Key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           set -e
 
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "ERROR: KEYSTORE_BASE64 secret missing."
-            exit 1
-          fi
+          test -n "$KEYSTORE_BASE64"
 
           echo "$KEYSTORE_BASE64" | base64 --decode \
-            > "$GITHUB_WORKSPACE/upload-keystore.jks"
+            > taxi-release.keystore
 
-          test -s "$GITHUB_WORKSPACE/upload-keystore.jks"
+          test -s taxi-release.keystore
 
-          echo "SIGNING KEY LOADED"
+          echo "KEYSTORE READY"
 
-      - name: Verify signing key
-        shell: bash
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-          set -e
-
-          keytool -list \
-            -keystore "$GITHUB_WORKSPACE/upload-keystore.jks" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS"
-
-          echo "SIGNING KEY VERIFIED"
-
-      # ==========================================
-      # 17. BUILD RELEASE
-      # ==========================================
-      - name: Build release APK and AAB
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          gradle clean \
-            --no-daemon \
-            --stacktrace \
-            --console=plain
-
-          gradle \
-            :app:assembleRelease \
-            :app:bundleRelease \
-            --no-daemon \
-            --stacktrace \
-            --console=plain
-
-          echo "RELEASE BUILD COMPLETED"
-
-      # ==========================================
-      # 18. FIND APK / AAB
-      # ==========================================
-      - name: Find APK and AAB
-        shell: bash
-        run: |
-          set -e
-
-          APK_FILE=$(find "$PROJECT_DIR/app/build" \
-            -type f \
-            -name "*.apk" \
-            | head -1)
-
-          AAB_FILE=$(find "$PROJECT_DIR/app/build" \
-            -type f \
-            -name "*.aab" \
-            | head -1)
-
-          if [ -z "$APK_FILE" ]; then
-            echo "ERROR: APK not found."
-            exit 1
-          fi
-
-          if [ -z "$AAB_FILE" ]; then
-            echo "ERROR: AAB not found."
-            exit 1
-          fi
-
-          echo "APK_FILE=$APK_FILE" >> "$GITHUB_ENV"
-          echo "AAB_FILE=$AAB_FILE" >> "$GITHUB_ENV"
-
-          echo "APK:"
-          ls -lh "$APK_FILE"
-
-          echo "AAB:"
-          ls -lh "$AAB_FILE"
-
-      # ==========================================
-      # 19. SIGN AAB
-      # ==========================================
       - name: Sign AAB
-        shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -516,48 +161,17 @@ jobs:
           set -e
 
           jarsigner \
-            -keystore "$GITHUB_WORKSPACE/upload-keystore.jks" \
+            -keystore taxi-release.keystore \
             -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" \
-            -signedjar "${AAB_FILE}.signed" \
-            "$AAB_FILE" \
+            -sigalg SHA256withRSA \
+            -digestalg SHA-256 \
+            "${PROJECT_DIR}/app/build/outputs/bundle/release/app-release.aab" \
             "$KEY_ALIAS"
-
-          mv "${AAB_FILE}.signed" "$AAB_FILE"
 
           echo "AAB SIGNED"
 
-      # ==========================================
-      # 20. SIGN APK
-      # ==========================================
-      - name: Sign APK
-        shell: bash
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -e
-
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner"
-
-          "$APKSIGNER" sign \
-            --ks "$GITHUB_WORKSPACE/upload-keystore.jks" \
-            --ks-pass "pass:$KEYSTORE_PASSWORD" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --key-pass "pass:$KEY_PASSWORD" \
-            --out "${APK_FILE}.signed.apk" \
-            "$APK_FILE"
-
-          mv "${APK_FILE}.signed.apk" "$APK_FILE"
-
-          echo "APK SIGNED"
-
-      # ==========================================
-      # 21. VERIFY AAB
-      # ==========================================
-      - name: Verify AAB signature
-        shell: bash
+      - name: Verify AAB
         run: |
           set -e
 
@@ -565,82 +179,24 @@ jobs:
             -verify \
             -verbose \
             -certs \
-            "$AAB_FILE"
+            "${PROJECT_DIR}/app/build/outputs/bundle/release/app-release.aab"
 
           echo "AAB SIGNATURE VERIFIED"
 
-      # ==========================================
-      # 22. VERIFY APK
-      # ==========================================
-      - name: Verify APK signature
-        shell: bash
+      - name: Prepare Final AAB
         run: |
           set -e
 
-          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" \
-            verify \
-            --verbose \
-            "$APK_FILE"
+          mkdir -p output
 
-          echo "APK SIGNATURE VERIFIED"
+          cp \
+            "${PROJECT_DIR}/app/build/outputs/bundle/release/app-release.aab" \
+            "output/Taxi-Driver-1.0.9-Premium-109-Signed.aab"
 
-      # ==========================================
-      # 23. FINAL BUILD INFORMATION
-      # ==========================================
-      - name: Show final Play Store build
-        shell: bash
-        run: |
-          echo "=============================================="
-          echo "       TAXI DRIVER PLAY STORE BUILD"
-          echo "=============================================="
-          echo ""
-          echo "VERSION NAME : 1.0.9"
-          echo "VERSION CODE : 109"
-          echo "MIN SDK      : 23"
-          echo "TARGET SDK   : 36"
-          echo "DEBUGGABLE   : FALSE"
-          echo "ADS SDK      : 24.8.0"
-          echo "AAB SIGNED   : YES"
-          echo "APK SIGNED   : YES"
-          echo ""
-          echo "PREMIUM DESIGN:"
-          echo "INSTALLED"
-          echo ""
-          echo "LIFETIME : AED 19.99"
-          echo "MONTHLY  : AED 2.09"
-          echo "YEARLY   : AED 9.99"
-          echo ""
-          echo "ONE-TIME PAYMENT : HIDDEN"
-          echo "AUTO-RENEWING    : HIDDEN"
-          echo ""
-          echo "=============================================="
+          ls -lh output/
 
-      # ==========================================
-      # 24. PREPARE FINAL FILES
-      # ==========================================
-      - name: Prepare final Play Store files
-        shell: bash
-        run: |
-          set -e
-
-          cp "$AAB_FILE" \
-            Taxi-Driver-1.0.9-Signed-109-API23.aab
-
-          cp "$APK_FILE" \
-            Taxi-Driver-1.0.9-Signed-109-API23.apk
-
-          echo "FINAL FILES:"
-          ls -lh \
-            Taxi-Driver-1.0.9-Signed-109-API23.aab \
-            Taxi-Driver-1.0.9-Signed-109-API23.apk
-
-      # ==========================================
-      # 25. UPLOAD ARTIFACT
-      # ==========================================
-      - name: Upload signed Play Store files
+      - name: Upload Signed AAB
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.0.9-Signed-109-API23-Premium-Design
-          path: |
-            Taxi-Driver-1.0.9-Signed-109-API23.aab
-            Taxi-Driver-1.0.9-Signed-109-API23.apk
+          name: Taxi-Driver-1.0.9-Premium-109-Signed
+          path: output/Taxi-Driver-1.0.9-Premium-109-Signed.aab
