@@ -46,14 +46,14 @@ jobs:
           gradle-version: '8.10.2'
 
       # ==========================================
-      # 5. EXTRACT NEW PREMIUM ZIP
+      # 5. EXTRACT V108 PREMIUM ZIP
       # ==========================================
       - name: Extract Premium 3 Plans project
         shell: bash
         run: |
           set -e
 
-          ZIP="Taxi_Driver_PlayStore_Update_1.0.6_PREMIUM_3PLANS_v107_Source.zip"
+          ZIP="Taxi_Driver_PlayStore_Update_1.0.6_PREMIUM_3PLANS_v108_FIXED.zip"
 
           echo "Looking for:"
           echo "$ZIP"
@@ -125,9 +125,9 @@ jobs:
           echo "$BUILD_FILE"
 
       # ==========================================
-      # 8. VERSION 1.0.6 / CODE 107
+      # 8. VERSION 1.0.6 / CODE 108
       # ==========================================
-      - name: Configure version 1.0.6 code 107
+      - name: Configure version 1.0.6 code 108
         shell: bash
         run: |
           set -e
@@ -142,7 +142,7 @@ jobs:
 
           s = re.sub(
               r'\bversionCode\s*(?:=)?\s*\d+',
-              'versionCode 107',
+              'versionCode 108',
               s
           )
 
@@ -155,9 +155,8 @@ jobs:
           p.write_text(s)
           PY
 
-          echo "======================================"
-          echo "VERSION"
-          echo "======================================"
+          echo "VERSION NAME = 1.0.6"
+          echo "VERSION CODE = 108"
 
           grep -n \
             "versionCode\|versionName" \
@@ -257,12 +256,7 @@ jobs:
         run: |
           set -e
 
-          echo "Searching for Google Mobile Ads SDK..."
-
           while IFS= read -r FILE; do
-
-            echo "Updating:"
-            echo "$FILE"
 
             sed -i \
               's/com\.google\.android\.gms:play-services-ads:25\.5\.0/com.google.android.gms:play-services-ads:24.8.0/g' \
@@ -286,8 +280,6 @@ jobs:
               || true
           )
 
-          echo "Checking for Ads SDK 25.5.0..."
-
           if grep -RIn \
             "play-services-ads.*25\.5\.0\|25\.5\.0.*play-services-ads" \
             "$PROJECT_DIR" \
@@ -299,10 +291,10 @@ jobs:
             exit 1
           fi
 
-          echo "Google Mobile Ads SDK = 24.8.0"
+          echo "GOOGLE MOBILE ADS = 24.8.0"
 
       # ==========================================
-      # 12. RELEASE DEBUGGABLE FALSE
+      # 12. DEBUGGABLE FALSE
       # ==========================================
       - name: Force release debuggable false
         shell: bash
@@ -329,7 +321,7 @@ jobs:
           p.write_text(s)
           PY
 
-          echo "RELEASE DEBUGGABLE = FALSE"
+          echo "DEBUGGABLE = FALSE"
 
       # ==========================================
       # 13. OPTIONAL HARDWARE FEATURES
@@ -388,7 +380,7 @@ jobs:
           echo "OPTIONAL FEATURES CONFIGURED"
 
       # ==========================================
-      # 14. VERIFY PREMIUM PRODUCT IDS
+      # 14. VERIFY PREMIUM 3 PLANS
       # ==========================================
       - name: Check Premium 3 Plan IDs
         shell: bash
@@ -501,18 +493,10 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "======================================"
-          echo "GRADLE CLEAN"
-          echo "======================================"
-
           gradle clean \
             --no-daemon \
             --stacktrace \
             --console=plain
-
-          echo "======================================"
-          echo "BUILDING RELEASE"
-          echo "======================================"
 
           gradle \
             :app:assembleRelease \
@@ -657,7 +641,7 @@ jobs:
           echo "================================================"
           echo ""
           echo "VERSION NAME : 1.0.6"
-          echo "VERSION CODE : 107"
+          echo "VERSION CODE : 108"
           echo "MIN SDK      : 23"
           echo "TARGET SDK   : 36"
           echo "DEBUGGABLE   : FALSE"
@@ -684,16 +668,16 @@ jobs:
           set -e
 
           cp "$AAB_FILE" \
-            Taxi-Driver-1.0.6-Signed-107-API23.aab
+            Taxi-Driver-1.0.6-Signed-108-API23.aab
 
           cp "$APK_FILE" \
-            Taxi-Driver-1.0.6-Signed-107-API23.apk
+            Taxi-Driver-1.0.6-Signed-108-API23.apk
 
           echo "FINAL FILES:"
 
           ls -lh \
-            Taxi-Driver-1.0.6-Signed-107-API23.aab \
-            Taxi-Driver-1.0.6-Signed-107-API23.apk
+            Taxi-Driver-1.0.6-Signed-108-API23.aab \
+            Taxi-Driver-1.0.6-Signed-108-API23.apk
 
       # ==========================================
       # 26. UPLOAD ARTIFACT
@@ -701,7 +685,7 @@ jobs:
       - name: Upload signed Play Store files
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.0.6-Signed-107-API23
+          name: Taxi-Driver-1.0.6-Signed-108-API23
           path: |
-            Taxi-Driver-1.0.6-Signed-107-API23.aab
-            Taxi-Driver-1.0.6-Signed-107-API23.apk
+            Taxi-Driver-1.0.6-Signed-108-API23.aab
+            Taxi-Driver-1.0.6-Signed-108-API23.apk
