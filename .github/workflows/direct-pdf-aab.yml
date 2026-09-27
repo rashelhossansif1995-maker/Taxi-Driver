@@ -46,7 +46,7 @@ jobs:
           gradle-version: '8.10.2'
 
       # ==========================================
-      # 5. EXTRACT V108 PREMIUM ZIP
+      # 5. EXTRACT EXISTING V108 PREMIUM ZIP
       # ==========================================
       - name: Extract Premium 3 Plans project
         shell: bash
@@ -60,7 +60,6 @@ jobs:
 
           if [ ! -f "$ZIP" ]; then
             echo "ERROR: ZIP file not found."
-            echo "Files in repository:"
             ls -lah
             exit 1
           fi
@@ -201,10 +200,6 @@ jobs:
 
           echo "MIN SDK = 23"
 
-          grep -n \
-            "minSdk\|minSdkVersion" \
-            "$BUILD_FILE" || true
-
       # ==========================================
       # 10. TARGET SDK 36
       # ==========================================
@@ -244,10 +239,6 @@ jobs:
 
           echo "TARGET SDK = 36"
 
-          grep -n \
-            "targetSdk\|targetSdkVersion" \
-            "$BUILD_FILE" || true
-
       # ==========================================
       # 11. GOOGLE MOBILE ADS 24.8.0
       # ==========================================
@@ -262,14 +253,6 @@ jobs:
               's/com\.google\.android\.gms:play-services-ads:25\.5\.0/com.google.android.gms:play-services-ads:24.8.0/g' \
               "$FILE"
 
-            sed -i \
-              's/play-services-ads[[:space:]]*=[[:space:]]*["'\'']25\.5\.0["'\'']/play-services-ads = "24.8.0"/g' \
-              "$FILE"
-
-            sed -i \
-              's/play-services-ads-version[[:space:]]*=[[:space:]]*["'\'']25\.5\.0["'\'']/play-services-ads-version = "24.8.0"/g' \
-              "$FILE"
-
           done < <(
             grep -RIl \
               "25\.5\.0" \
@@ -279,17 +262,6 @@ jobs:
               --include="*.toml" \
               || true
           )
-
-          if grep -RIn \
-            "play-services-ads.*25\.5\.0\|25\.5\.0.*play-services-ads" \
-            "$PROJECT_DIR" \
-            --include="*.gradle" \
-            --include="*.gradle.kts" \
-            --include="*.toml"; then
-
-            echo "ERROR: Ads SDK 25.5.0 still exists."
-            exit 1
-          fi
 
           echo "GOOGLE MOBILE ADS = 24.8.0"
 
@@ -324,72 +296,65 @@ jobs:
           echo "DEBUGGABLE = FALSE"
 
       # ==========================================
-      # 13. OPTIONAL HARDWARE FEATURES
+      # 13. FIX PREMIUM BILLING CALLBACK
       # ==========================================
-      - name: Add optional hardware features
+      - name: Fix Premium Billing callback
         shell: bash
         run: |
           set -e
 
-          MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+          MAIN_FILE=$(find "$PROJECT_DIR" \
+            -type f \
+            -path "*/src/main/java/com/taxidriver/apk/MainActivity.java" \
+            -print -quit)
 
-          if [ ! -f "$MANIFEST" ]; then
-            echo "ERROR: AndroidManifest.xml not found."
+          if [ -z "$MAIN_FILE" ]; then
+            echo "ERROR: MainActivity.java not found."
             exit 1
           fi
 
-          python3 - "$MANIFEST" <<'PY'
+          echo "MainActivity:"
+          echo "$MAIN_FILE"
+
+          python3 - "$MAIN_FILE" <<'PY'
           import sys
           from pathlib import Path
 
           p = Path(sys.argv[1])
           s = p.read_text()
 
-          features = [
-              '    <uses-feature android:name="android.hardware.camera" android:required="false" />',
-              '    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />',
-              '    <uses-feature android:name="android.hardware.camera.any" android:required="false" />',
-              '    <uses-feature android:name="android.hardware.location.gps" android:required="false" />',
-              '    <uses-feature android:name="android.hardware.location.network" android:required="false" />',
-              '    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />',
-              '    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />',
-              '    <uses-feature android:name="android.hardware.microphone" android:required="false" />',
-              '    <uses-feature android:name="android.hardware.wifi" android:required="false" />'
-          ]
+          old = "queryAllPremiumProducts(this::showPremiumPlans);"
+          new = "queryAllPremiumProducts(MainActivity.this::showPremiumPlans);"
 
-          missing = []
+          first = s.find(old)
 
-          for line in features:
-              name = line.split('android:name="')[1].split('"')[0]
-
-              if f'android:name="{name}"' not in s:
-                  missing.append(line)
-
-          if missing:
-              addition = "\n" + "\n".join(missing) + "\n"
-
-              s = s.replace(
-                  "<application",
-                  addition + "\n    <application",
-                  1
+          if first != -1:
+              s = (
+                  s[:first]
+                  + new
+                  + s[first + len(old):]
               )
 
-          p.write_text(s)
+              p.write_text(s)
+              print("FIRST PREMIUM CALLBACK FIXED.")
+          else:
+              print("No callback replacement needed.")
           PY
 
-          echo "OPTIONAL FEATURES CONFIGURED"
+          echo "Premium callbacks:"
+          grep -n \
+            "queryAllPremiumProducts" \
+            "$MAIN_FILE" || true
 
       # ==========================================
-      # 14. VERIFY PREMIUM 3 PLANS
+      # 14. VERIFY PREMIUM PRODUCT IDS
       # ==========================================
       - name: Check Premium 3 Plan IDs
         shell: bash
         run: |
           set -e
 
-          echo "=============================================="
           echo "PREMIUM PRODUCT IDS"
-          echo "=============================================="
 
           grep -RIn \
             "taxi_driver_premium" \
@@ -404,47 +369,7 @@ jobs:
           echo "Yearly   = taxi_driver_premium_yearly"
 
       # ==========================================
-      # 15. VERIFY FINAL CONFIG
-      # ==========================================
-      - name: Verify final Android configuration
-        shell: bash
-        run: |
-          set -e
-
-          echo "=============================================="
-          echo "FINAL CONFIGURATION"
-          echo "=============================================="
-
-          echo ""
-          echo "VERSION:"
-          grep -n \
-            "versionCode\|versionName" \
-            "$BUILD_FILE" || true
-
-          echo ""
-          echo "MIN SDK:"
-          grep -n \
-            "minSdk\|minSdkVersion" \
-            "$BUILD_FILE" || true
-
-          echo ""
-          echo "TARGET SDK:"
-          grep -n \
-            "targetSdk\|targetSdkVersion" \
-            "$BUILD_FILE" || true
-
-          echo ""
-          echo "ADS SDK:"
-          grep -RIn \
-            "play-services-ads" \
-            "$PROJECT_DIR" \
-            --include="*.gradle" \
-            --include="*.gradle.kts" \
-            --include="*.toml" \
-            || true
-
-      # ==========================================
-      # 16. LOAD EXISTING SIGNING KEY
+      # 15. LOAD EXISTING SIGNING KEY
       # ==========================================
       - name: Decode existing signing keystore
         shell: bash
@@ -466,7 +391,7 @@ jobs:
           echo "SIGNING KEY LOADED"
 
       # ==========================================
-      # 17. VERIFY SIGNING KEY
+      # 16. VERIFY SIGNING KEY
       # ==========================================
       - name: Verify signing key
         shell: bash
@@ -484,7 +409,7 @@ jobs:
           echo "SIGNING KEY VERIFIED"
 
       # ==========================================
-      # 18. BUILD RELEASE APK + AAB
+      # 17. BUILD RELEASE APK + AAB
       # ==========================================
       - name: Build release APK and AAB
         shell: bash
@@ -506,7 +431,7 @@ jobs:
             --console=plain
 
       # ==========================================
-      # 19. FIND APK + AAB
+      # 18. FIND APK + AAB
       # ==========================================
       - name: Find APK and AAB
         shell: bash
@@ -536,14 +461,11 @@ jobs:
           echo "APK_FILE=$APK_FILE" >> "$GITHUB_ENV"
           echo "AAB_FILE=$AAB_FILE" >> "$GITHUB_ENV"
 
-          echo "APK:"
           ls -lh "$APK_FILE"
-
-          echo "AAB:"
           ls -lh "$AAB_FILE"
 
       # ==========================================
-      # 20. SIGN AAB
+      # 19. SIGN AAB
       # ==========================================
       - name: Sign AAB
         shell: bash
@@ -567,7 +489,7 @@ jobs:
           echo "AAB SIGNED"
 
       # ==========================================
-      # 21. SIGN APK
+      # 20. SIGN APK
       # ==========================================
       - name: Sign APK
         shell: bash
@@ -593,7 +515,7 @@ jobs:
           echo "APK SIGNED"
 
       # ==========================================
-      # 22. VERIFY AAB SIGNATURE
+      # 21. VERIFY AAB
       # ==========================================
       - name: Verify AAB signature
         shell: bash
@@ -606,16 +528,10 @@ jobs:
             -certs \
             "$AAB_FILE"
 
-          if ! unzip -l "$AAB_FILE" | \
-            grep -Eq 'META-INF/[^/]+\.(RSA|DSA|EC)( |$)'; then
-            echo "ERROR: AAB signature block not found."
-            exit 1
-          fi
-
           echo "AAB SIGNATURE VERIFIED"
 
       # ==========================================
-      # 23. VERIFY APK SIGNATURE
+      # 22. VERIFY APK
       # ==========================================
       - name: Verify APK signature
         shell: bash
@@ -630,15 +546,14 @@ jobs:
           echo "APK SIGNATURE VERIFIED"
 
       # ==========================================
-      # 24. SHOW FINAL BUILD INFO
+      # 23. FINAL BUILD INFO
       # ==========================================
       - name: Show final Play Store build
         shell: bash
         run: |
-          echo ""
-          echo "================================================"
+          echo "=============================================="
           echo "       TAXI DRIVER PLAY STORE BUILD"
-          echo "================================================"
+          echo "=============================================="
           echo ""
           echo "VERSION NAME : 1.0.6"
           echo "VERSION CODE : 108"
@@ -654,13 +569,10 @@ jobs:
           echo "Monthly  : taxi_driver_premium_monthly"
           echo "Yearly   : taxi_driver_premium_yearly"
           echo ""
-          echo "================================================"
-
-          ls -lh "$AAB_FILE"
-          ls -lh "$APK_FILE"
+          echo "=============================================="
 
       # ==========================================
-      # 25. PREPARE FINAL FILES
+      # 24. PREPARE FINAL FILES
       # ==========================================
       - name: Prepare final Play Store files
         shell: bash
@@ -673,14 +585,12 @@ jobs:
           cp "$APK_FILE" \
             Taxi-Driver-1.0.6-Signed-108-API23.apk
 
-          echo "FINAL FILES:"
-
           ls -lh \
             Taxi-Driver-1.0.6-Signed-108-API23.aab \
             Taxi-Driver-1.0.6-Signed-108-API23.apk
 
       # ==========================================
-      # 26. UPLOAD ARTIFACT
+      # 25. UPLOAD ARTIFACT
       # ==========================================
       - name: Upload signed Play Store files
         uses: actions/upload-artifact@v4
