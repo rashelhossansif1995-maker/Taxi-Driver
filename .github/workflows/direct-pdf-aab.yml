@@ -1,4 +1,4 @@
-name: Build Taxi Driver 1.0.9 Premium - Signed AAB
+name: Build Taxi Driver 1.0.9 Premium - Signed AAB + APK
 
 on:
   workflow_dispatch:
@@ -9,60 +9,50 @@ jobs:
 
     steps:
 
-      # 1. CHECKOUT
+      # 1. Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. JDK 17
+      # 2. Java
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # 3. ANDROID SDK
+      # 3. Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # 4. ANDROID 36
+      # 4. Android 36 + Build Tools
       - name: Install Android 36
         run: |
-          set -e
-
           sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      # 5. GRADLE
+      # 5. Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
 
-      # 6. EXTRACT EXISTING ZIP
+      # 6. Extract existing project ZIP
       - name: Extract Premium Project
         run: |
           set -e
 
           ZIP="Taxi_Driver_1.0.9_PREMIUM_FINAL_DESIGN_PROJECT_BUILD_FIXED.zip"
 
-          echo "Using project:"
-          echo "$ZIP"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERROR: ZIP file not found"
-            exit 1
-          fi
+          test -f "$ZIP"
 
           rm -rf project
           mkdir -p project
 
           unzip -q "$ZIP" -d project
 
-          echo "PROJECT EXTRACTED SUCCESSFULLY"
-
-      # 7. FIND ANDROID PROJECT
+      # 7. Find Android project
       - name: Find Android Project
         run: |
           set -e
@@ -71,19 +61,15 @@ jobs:
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             -print -quit)
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: settings.gradle not found"
-            exit 1
-          fi
+          test -n "$SETTINGS"
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Android project:"
-          echo "$PROJECT_DIR"
+          echo "Android Project: $PROJECT_DIR"
 
-      # 8. VERIFY PROJECT
+      # 8. Verify Premium project
       - name: Verify Premium Project
         run: |
           set -e
@@ -93,26 +79,17 @@ jobs:
             -name "MainActivity.java" \
             -print -quit)
 
-          if [ -z "$MAIN_FILE" ]; then
-            echo "ERROR: MainActivity.java not found"
-            exit 1
-          fi
+          test -n "$MAIN_FILE"
 
-          if [ ! -f "$PROJECT_DIR/app/src/main/assets/index.html" ]; then
-            echo "ERROR: index.html not found"
-            exit 1
-          fi
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
 
-          if [ ! -f "$PROJECT_DIR/app/src/main/res/drawable-nodpi/taxi_driver_premium_logo.png" ]; then
-            echo "ERROR: Premium logo PNG not found"
-            exit 1
-          fi
+          test -f "$PROJECT_DIR/app/src/main/res/drawable-nodpi/taxi_driver_premium_logo.png"
 
-          echo "MainActivity: OK"
+          echo "MainActivity: $MAIN_FILE"
           echo "Premium HTML: OK"
-          echo "Premium Logo PNG: OK"
+          echo "Premium Logo: OK"
 
-      # 9. FIX PREMIUM CALLBACK
+      # 9. Fix Premium Callback
       - name: Fix Premium Callback
         run: |
           set -e
@@ -122,13 +99,6 @@ jobs:
             -name "MainActivity.java" \
             -print -quit)
 
-          if [ -z "$MAIN_FILE" ]; then
-            echo "ERROR: MainActivity.java not found"
-            exit 1
-          fi
-
-          echo "Fixing Premium callback..."
-
           python3 - "$MAIN_FILE" <<'PY'
           import sys
           from pathlib import Path
@@ -136,58 +106,44 @@ jobs:
           p = Path(sys.argv[1])
           s = p.read_text()
 
-          # Fix accidental double MainActivity
           s = s.replace(
               "MainActivity.MainActivity.this::showPremiumPlans",
               "MainActivity.this::showPremiumPlans"
           )
 
-          # Fix normal unqualified callback
           s = s.replace(
               "this::showPremiumPlans",
               "MainActivity.this::showPremiumPlans"
           )
 
-          # Final safety replacement
           s = s.replace(
               "MainActivity.MainActivity.this::showPremiumPlans",
               "MainActivity.this::showPremiumPlans"
           )
 
           p.write_text(s)
-
-          print("Premium callback correction completed.")
           PY
 
-          echo "Checking callback..."
-
-          if grep -q \
-            "MainActivity.MainActivity.this::showPremiumPlans" \
-            "$MAIN_FILE"; then
-
-            echo "ERROR: Wrong callback still exists"
+          if grep -q "MainActivity.MainActivity.this::showPremiumPlans" "$MAIN_FILE"; then
+            echo "ERROR: Invalid callback remains"
             exit 1
           fi
 
-          if grep -q \
-            "MainActivity.this::showPremiumPlans" \
-            "$MAIN_FILE"; then
-
+          if grep -q "MainActivity.this::showPremiumPlans" "$MAIN_FILE"; then
             echo "CALLBACK OK"
-
           else
-
-            echo "ERROR: Correct callback not found"
+            echo "ERROR: Callback not found"
             exit 1
-
           fi
 
-      # 10. CONFIGURE PLAY STORE VERSION
-      - name: Configure Play Store Version
+      # 10. Configure Version + SDK
+      - name: Configure Version 1.0.9
         run: |
           set -e
 
-          python3 - "$PROJECT_DIR/app/build.gradle" <<'PY'
+          BUILD_FILE="$PROJECT_DIR/app/build.gradle"
+
+          python3 - "$BUILD_FILE" <<'PY'
           import sys
           import re
           from pathlib import Path
@@ -195,88 +151,68 @@ jobs:
           p = Path(sys.argv[1])
           s = p.read_text()
 
-          # Version Code
           s = re.sub(
               r'versionCode\s+\d+',
               'versionCode 109',
               s
           )
 
-          # Version Name
           s = re.sub(
-              r'versionName\s+["\'][^"\']+["\']',
+              r'versionName\s+"[^"]+"',
               'versionName "1.0.9"',
               s
           )
 
-          # Compile SDK
           s = re.sub(
               r'compileSdk\s+\d+',
               'compileSdk 36',
               s
           )
 
-          # Minimum SDK
-          s = re.sub(
-              r'minSdk\s+\d+',
-              'minSdk 23',
-              s
-          )
-
-          # Target SDK
           s = re.sub(
               r'targetSdk\s+\d+',
               'targetSdk 36',
               s
           )
 
+          s = re.sub(
+              r'minSdk\s+\d+',
+              'minSdk 23',
+              s
+          )
+
           p.write_text(s)
           PY
 
-          echo "VERSION NAME: 1.0.9"
-          echo "VERSION CODE: 109"
-          echo "MIN SDK: 23"
-          echo "TARGET SDK: 36"
-          echo "COMPILE SDK: 36"
+          echo "Version configuration:"
+          grep -E "versionCode|versionName|compileSdk|targetSdk|minSdk" "$BUILD_FILE" || true
 
-      # 11. BUILD RELEASE AAB
-      - name: Build Release AAB
-        working-directory: ${{ env.PROJECT_DIR }}
+      # 11. Build AAB + APK
+      - name: Build Release AAB and APK
         run: |
           set -e
 
-          gradle clean bundleRelease \
+          cd "$PROJECT_DIR"
+
+          gradle clean assembleRelease bundleRelease \
             --no-daemon \
             --stacktrace \
             --console=plain
 
-          echo "================================"
-          echo "RELEASE AAB BUILD SUCCESSFUL"
-          echo "================================"
-
-      # 12. PREPARE SIGNING KEY
+      # 12. Prepare signing key
       - name: Prepare Signing Key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           set -e
 
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "ERROR: KEYSTORE_BASE64 secret is missing"
-            exit 1
-          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > taxi-release.keystore
 
-          echo "$KEYSTORE_BASE64" | base64 --decode \
-            > taxi-release.keystore
+          test -s taxi-release.keystore
 
-          if [ ! -s taxi-release.keystore ]; then
-            echo "ERROR: Keystore creation failed"
-            exit 1
-          fi
+          echo "Keystore ready"
 
-          echo "KEYSTORE READY"
-
-      # 13. SIGN AAB
+      # 13. Sign AAB
       - name: Sign AAB
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -285,71 +221,128 @@ jobs:
         run: |
           set -e
 
-          if [ -z "$KEYSTORE_PASSWORD" ]; then
-            echo "ERROR: KEYSTORE_PASSWORD secret is missing"
-            exit 1
-          fi
+          mkdir -p output
 
-          if [ -z "$KEY_ALIAS" ]; then
-            echo "ERROR: KEY_ALIAS secret is missing"
-            exit 1
-          fi
+          UNSIGNED_AAB=$(find "$PROJECT_DIR/app/build/outputs/bundle/release" \
+            -type f \
+            -name "*.aab" \
+            -print -quit)
 
-          if [ -z "$KEY_PASSWORD" ]; then
-            echo "ERROR: KEY_PASSWORD secret is missing"
-            exit 1
-          fi
-
-          AAB="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
-
-          if [ ! -f "$AAB" ]; then
-            echo "ERROR: Release AAB not found"
-            exit 1
-          fi
+          test -n "$UNSIGNED_AAB"
 
           jarsigner \
             -keystore taxi-release.keystore \
             -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" \
-            -sigalg SHA256withRSA \
-            -digestalg SHA-256 \
-            "$AAB" \
+            -signedjar \
+              output/Taxi-Driver-1.0.9-Premium-109-Signed.aab \
+            "$UNSIGNED_AAB" \
             "$KEY_ALIAS"
 
-          echo "AAB SIGNED SUCCESSFULLY"
+          jarsigner -verify \
+            output/Taxi-Driver-1.0.9-Premium-109-Signed.aab
 
-      # 14. VERIFY SIGNATURE
-      - name: Verify AAB
-        run: |
-          set -e
+          echo "AAB SIGNED OK"
 
-          AAB="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
-
-          jarsigner \
-            -verify \
-            -verbose \
-            -certs \
-            "$AAB"
-
-          echo "AAB SIGNATURE VERIFIED"
-
-      # 15. PREPARE FINAL AAB
-      - name: Prepare Final AAB
+      # 14. Prepare APK
+      - name: Prepare APK
         run: |
           set -e
 
           mkdir -p output
 
-          cp \
-            "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
-            "output/Taxi-Driver-1.0.9-Premium-109-Signed.aab"
+          APK_DIR="$PROJECT_DIR/app/build/outputs/apk/release"
 
-          echo "FINAL AAB:"
+          UNSIGNED_APK=$(find "$APK_DIR" \
+            -maxdepth 1 \
+            -type f \
+            -name "*unsigned.apk" \
+            -print -quit)
+
+          if [ -z "$UNSIGNED_APK" ]; then
+            UNSIGNED_APK=$(find "$APK_DIR" \
+              -maxdepth 1 \
+              -type f \
+              -name "*.apk" \
+              -print -quit)
+          fi
+
+          test -n "$UNSIGNED_APK"
+
+          echo "APK found:"
+          echo "$UNSIGNED_APK"
+
+          echo "UNSIGNED_APK=$UNSIGNED_APK" >> "$GITHUB_ENV"
+
+      # 15. Zipalign APK
+      - name: Zipalign APK
+        run: |
+          set -e
+
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+
+          "$BUILD_TOOLS/zipalign" \
+            -p \
+            -f \
+            4 \
+            "$UNSIGNED_APK" \
+            output/Taxi-Driver-1.0.9-Premium-109-aligned.apk
+
+          echo "APK ZIPALIGN OK"
+
+      # 16. Sign APK
+      - name: Sign APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -e
+
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks taxi-release.keystore \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --out \
+              output/Taxi-Driver-1.0.9-Premium-109-Signed.apk \
+            output/Taxi-Driver-1.0.9-Premium-109-aligned.apk
+
+          "$BUILD_TOOLS/apksigner" verify \
+            --verbose \
+            output/Taxi-Driver-1.0.9-Premium-109-Signed.apk
+
+          echo "APK SIGNED AND VERIFIED OK"
+
+      # 17. Check final files
+      - name: Check Final Files
+        run: |
+          set -e
+
           ls -lh output/
 
-      # 16. UPLOAD AAB ARTIFACT
+          test -s output/Taxi-Driver-1.0.9-Premium-109-Signed.aab
+          test -s output/Taxi-Driver-1.0.9-Premium-109-Signed.apk
+
+          echo ""
+          echo "======================================"
+          echo "AAB + APK BUILD SUCCESS"
+          echo "======================================"
+
+      # 18. Upload AAB
       - name: Upload Signed AAB
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.0.9-Premium-109-Signed
+          name: Taxi-Driver-1.0.9-Premium-109-Signed-AAB
           path: output/Taxi-Driver-1.0.9-Premium-109-Signed.aab
+          retention-days: 30
+
+      # 19. Upload APK
+      - name: Upload Signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Taxi-Driver-1.0.9-Premium-109-Signed-APK
+          path: output/Taxi-Driver-1.0.9-Premium-109-Signed.apk
+          retention-days: 30
