@@ -27,6 +27,8 @@ jobs:
       # 4. ANDROID 36
       - name: Install Android 36
         run: |
+          set -e
+
           sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
             "platform-tools" \
             "platforms;android-36" \
@@ -38,17 +40,20 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
-      # 6. EXTRACT NEW FIXED PROJECT
-      - name: Extract Final Build Fixed Project
+      # 6. EXTRACT EXISTING ZIP
+      - name: Extract Premium Project
         run: |
           set -e
 
           ZIP="Taxi_Driver_1.0.9_PREMIUM_FINAL_DESIGN_PROJECT_BUILD_FIXED.zip"
 
-          echo "Using ZIP:"
+          echo "Using project:"
           echo "$ZIP"
 
-          test -f "$ZIP"
+          if [ ! -f "$ZIP" ]; then
+            echo "ERROR: ZIP file not found"
+            exit 1
+          fi
 
           rm -rf project
           mkdir -p project
@@ -117,15 +122,67 @@ jobs:
             -name "MainActivity.java" \
             -print -quit)
 
-          echo "Checking Premium callback..."
+          if [ -z "$MAIN_FILE" ]; then
+            echo "ERROR: MainActivity.java not found"
+            exit 1
+          fi
 
-          sed -i \
-            's/this::showPremiumPlans/MainActivity.this::showPremiumPlans/g' \
-            "$MAIN_FILE"
+          echo "Fixing Premium callback..."
 
-          echo "Premium callback fixed."
+          python3 - "$MAIN_FILE" <<'PY'
+          import sys
+          from pathlib import Path
 
-      # 10. CONFIGURE VERSION
+          p = Path(sys.argv[1])
+          s = p.read_text()
+
+          # Fix accidental double MainActivity
+          s = s.replace(
+              "MainActivity.MainActivity.this::showPremiumPlans",
+              "MainActivity.this::showPremiumPlans"
+          )
+
+          # Fix normal unqualified callback
+          s = s.replace(
+              "this::showPremiumPlans",
+              "MainActivity.this::showPremiumPlans"
+          )
+
+          # Final safety replacement
+          s = s.replace(
+              "MainActivity.MainActivity.this::showPremiumPlans",
+              "MainActivity.this::showPremiumPlans"
+          )
+
+          p.write_text(s)
+
+          print("Premium callback correction completed.")
+          PY
+
+          echo "Checking callback..."
+
+          if grep -q \
+            "MainActivity.MainActivity.this::showPremiumPlans" \
+            "$MAIN_FILE"; then
+
+            echo "ERROR: Wrong callback still exists"
+            exit 1
+          fi
+
+          if grep -q \
+            "MainActivity.this::showPremiumPlans" \
+            "$MAIN_FILE"; then
+
+            echo "CALLBACK OK"
+
+          else
+
+            echo "ERROR: Correct callback not found"
+            exit 1
+
+          fi
+
+      # 10. CONFIGURE PLAY STORE VERSION
       - name: Configure Play Store Version
         run: |
           set -e
@@ -138,30 +195,35 @@ jobs:
           p = Path(sys.argv[1])
           s = p.read_text()
 
+          # Version Code
           s = re.sub(
               r'versionCode\s+\d+',
               'versionCode 109',
               s
           )
 
+          # Version Name
           s = re.sub(
               r'versionName\s+["\'][^"\']+["\']',
               'versionName "1.0.9"',
               s
           )
 
+          # Compile SDK
           s = re.sub(
               r'compileSdk\s+\d+',
               'compileSdk 36',
               s
           )
 
+          # Minimum SDK
           s = re.sub(
               r'minSdk\s+\d+',
               'minSdk 23',
               s
           )
 
+          # Target SDK
           s = re.sub(
               r'targetSdk\s+\d+',
               'targetSdk 36',
@@ -173,8 +235,9 @@ jobs:
 
           echo "VERSION NAME: 1.0.9"
           echo "VERSION CODE: 109"
-          echo "TARGET SDK: 36"
           echo "MIN SDK: 23"
+          echo "TARGET SDK: 36"
+          echo "COMPILE SDK: 36"
 
       # 11. BUILD RELEASE AAB
       - name: Build Release AAB
@@ -187,7 +250,9 @@ jobs:
             --stacktrace \
             --console=plain
 
+          echo "================================"
           echo "RELEASE AAB BUILD SUCCESSFUL"
+          echo "================================"
 
       # 12. PREPARE SIGNING KEY
       - name: Prepare Signing Key
@@ -204,7 +269,10 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > taxi-release.keystore
 
-          test -s taxi-release.keystore
+          if [ ! -s taxi-release.keystore ]; then
+            echo "ERROR: Keystore creation failed"
+            exit 1
+          fi
 
           echo "KEYSTORE READY"
 
@@ -232,9 +300,12 @@ jobs:
             exit 1
           fi
 
-          AAB="${PROJECT_DIR}/app/build/outputs/bundle/release/app-release.aab"
+          AAB="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
 
-          test -f "$AAB"
+          if [ ! -f "$AAB" ]; then
+            echo "ERROR: Release AAB not found"
+            exit 1
+          fi
 
           jarsigner \
             -keystore taxi-release.keystore \
@@ -252,7 +323,7 @@ jobs:
         run: |
           set -e
 
-          AAB="${PROJECT_DIR}/app/build/outputs/bundle/release/app-release.aab"
+          AAB="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
 
           jarsigner \
             -verify \
@@ -270,9 +341,10 @@ jobs:
           mkdir -p output
 
           cp \
-            "${PROJECT_DIR}/app/build/outputs/bundle/release/app-release.aab" \
+            "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
             "output/Taxi-Driver-1.0.9-Premium-109-Signed.aab"
 
+          echo "FINAL AAB:"
           ls -lh output/
 
       # 16. UPLOAD AAB ARTIFACT
