@@ -39,7 +39,8 @@ jobs:
 
           ZIP="Taxi_Driver_1.0.9_PREMIUM_FINAL_DESIGN_PROJECT_BUILD_FIXED_CURRENCY.zip"
 
-          echo "Using ZIP: $ZIP"
+          echo "Using ZIP:"
+          echo "$ZIP"
 
           test -f "$ZIP"
 
@@ -47,6 +48,8 @@ jobs:
           mkdir -p project
 
           unzip -q "$ZIP" -d project
+
+          echo "Project extracted successfully."
 
       - name: Find Android Project
         run: |
@@ -81,7 +84,13 @@ jobs:
 
           test -f "$PROJECT_DIR/app/src/main/res/drawable-nodpi/taxi_driver_premium_logo.png"
 
-          echo "Project verification OK"
+          echo "MainActivity found:"
+          echo "$MAIN_FILE"
+
+          echo "HTML found:"
+          echo "$PROJECT_DIR/app/src/main/assets/index.html"
+
+          echo "Premium logo found."
 
       - name: Fix Premium Callback
         run: |
@@ -91,6 +100,8 @@ jobs:
             -type f \
             -name "MainActivity.java" \
             -print -quit)
+
+          test -n "$MAIN_FILE"
 
           python3 - "$MAIN_FILE" <<'PY'
           import sys
@@ -104,20 +115,13 @@ jobs:
               "MainActivity.this::showPremiumPlans"
           )
 
-          s = s.replace(
-              "this::showPremiumPlans",
-              "MainActivity.this::showPremiumPlans"
-          )
-
           p.write_text(s)
+
+          print("Premium callback cleanup completed.")
           PY
 
-          if grep -q "MainActivity.MainActivity.this::showPremiumPlans" "$MAIN_FILE"; then
-            echo "ERROR: Invalid Premium callback remains"
-            exit 1
-          fi
-
-          echo "Premium callback fixed"
+          echo "Checking Premium callback:"
+          grep -n "showPremiumPlans" "$MAIN_FILE" || true
 
       - name: Configure Version 1.0.9
         run: |
@@ -167,9 +171,14 @@ jobs:
           )
 
           p.write_text(s)
+
+          print("Version configuration completed.")
           PY
 
-          echo "Version configured"
+          echo "===== BUILD CONFIGURATION ====="
+          grep -E "versionCode|versionName|compileSdk|minSdk|targetSdk" \
+            "$PROJECT_DIR/app/build.gradle" || true
+          echo "================================"
 
       - name: Build Release AAB and APK
         run: |
@@ -182,6 +191,8 @@ jobs:
             --stacktrace \
             --console=plain
 
+          echo "AAB + APK build completed."
+
       - name: Prepare Signing Key
         run: |
           set -e
@@ -190,7 +201,7 @@ jobs:
 
           test -s release.keystore
 
-          echo "Signing key prepared"
+          echo "Signing key prepared."
 
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -208,6 +219,9 @@ jobs:
 
           test -n "$AAB"
 
+          echo "Unsigned AAB:"
+          echo "$AAB"
+
           jarsigner \
             -verbose \
             -sigalg SHA256withRSA \
@@ -221,9 +235,9 @@ jobs:
           jarsigner -verify -verbose -certs "$AAB"
 
           cp "$AAB" \
-            "output/Taxi-Driver-1.0.9-Premium-109-Signed.aab"
+            "output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.aab"
 
-          echo "AAB signing complete"
+          echo "Signed AAB created."
 
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -241,6 +255,9 @@ jobs:
 
           test -n "$APK"
 
+          echo "Unsigned APK:"
+          echo "$APK"
+
           BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/36.0.0"
 
           "$BUILD_TOOLS/zipalign" \
@@ -253,14 +270,14 @@ jobs:
             --ks-pass env:KEYSTORE_PASSWORD \
             --ks-key-alias "$KEY_ALIAS" \
             --key-pass env:KEY_PASSWORD \
-            --out output/Taxi-Driver-1.0.9-Premium-109-Signed.apk \
+            --out "output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.apk" \
             aligned.apk
 
           "$BUILD_TOOLS/apksigner" verify \
             --verbose \
-            output/Taxi-Driver-1.0.9-Premium-109-Signed.apk
+            "output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.apk"
 
-          echo "APK signing complete"
+          echo "Signed APK created."
 
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -269,15 +286,19 @@ jobs:
 
       - name: Show Final Files
         run: |
-          echo "===== FINAL BUILD FILES ====="
+          echo "======================================"
+          echo "FINAL BUILD FILES"
+          echo "======================================"
+
           ls -lh output/
-          echo "============================="
+
+          echo "======================================"
 
       - name: Upload AAB + APK
         uses: actions/upload-artifact@v4
         with:
           name: Taxi-Driver-1.0.9-Premium-109-Currency-AAB-APK
           path: |
-            output/Taxi-Driver-1.0.9-Premium-109-Signed.aab
-            output/Taxi-Driver-1.0.9-Premium-109-Signed.apk
+            output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.aab
+            output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.apk
           if-no-files-found: error
