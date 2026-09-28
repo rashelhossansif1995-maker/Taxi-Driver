@@ -37,7 +37,7 @@ jobs:
         run: |
           set -e
 
-          ZIP="Taxi_Driver_1.0.9_PREMIUM_FINAL_DESIGN_PROJECT.zip"
+          ZIP="Taxi_Driver_1.0.9_PREMIUM_FINAL_DESIGN_PROJECT_PNG_FIXED.zip"
 
           test -f "$ZIP"
 
@@ -69,14 +69,21 @@ jobs:
         run: |
           set -e
 
-          test -f "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
+          MAIN_FILE=$(find "$PROJECT_DIR/app/src/main/java" \
+            -type f \
+            -name "MainActivity.java" \
+            -print -quit)
+
+          test -n "$MAIN_FILE"
+
           test -f "$PROJECT_DIR/app/src/main/assets/index.html"
+
           test -f "$PROJECT_DIR/app/src/main/res/drawable-nodpi/taxi_driver_premium_logo.png"
 
-          echo "Premium project verified."
           echo "MainActivity: OK"
           echo "Premium HTML: OK"
-          echo "Premium logo: OK"
+          echo "Premium Logo PNG: OK"
+          echo "PREMIUM PROJECT VERIFIED"
 
       - name: Configure Play Store Version
         run: |
@@ -127,7 +134,7 @@ jobs:
           echo "VERSION CODE = 109"
           echo "TARGET SDK = 36"
 
-      - name: Build Signed Release AAB
+      - name: Build Release AAB
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
