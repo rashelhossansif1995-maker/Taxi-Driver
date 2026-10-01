@@ -1,4 +1,4 @@
-name: Build Taxi Driver 1.0.9 Premium Currency - AAB + APK
+name: Build Taxi Driver 1.1.0 Final Commission - AAB + APK
 
 on:
   workflow_dispatch:
@@ -9,18 +9,33 @@ jobs:
 
     steps:
 
+      # ==============================
+      # CHECKOUT
+      # ==============================
       - name: Checkout
         uses: actions/checkout@v4
 
+
+      # ==============================
+      # JAVA 17
+      # ==============================
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+
+      # ==============================
+      # ANDROID SDK
+      # ==============================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
+
+      # ==============================
+      # ANDROID 36
+      # ==============================
       - name: Install Android 36
         run: |
           sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
@@ -28,19 +43,29 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
+
+      # ==============================
+      # GRADLE
+      # ==============================
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
 
-      - name: Extract Currency Fixed Premium Project
+
+      # ==============================
+      # EXTRACT FINAL PROJECT
+      # ==============================
+      - name: Extract Final Commission Project
         run: |
           set -e
 
-          ZIP="Taxi_Driver_1.0.9_PREMIUM_FINAL_DESIGN_PROJECT_BUILD_FIXED_CURRENCY.zip"
+          ZIP="Taxi_Driver_1.1.0_FINAL_COMMISSION_FIXED.zip"
 
-          echo "Using ZIP:"
+          echo "======================================"
+          echo "USING PROJECT ZIP:"
           echo "$ZIP"
+          echo "======================================"
 
           test -f "$ZIP"
 
@@ -51,6 +76,10 @@ jobs:
 
           echo "Project extracted successfully."
 
+
+      # ==============================
+      # FIND ANDROID PROJECT
+      # ==============================
       - name: Find Android Project
         run: |
           set -e
@@ -66,9 +95,15 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Android project:"
+          echo "======================================"
+          echo "ANDROID PROJECT:"
           echo "$PROJECT_DIR"
+          echo "======================================"
 
+
+      # ==============================
+      # VERIFY PROJECT
+      # ==============================
       - name: Verify Project
         run: |
           set -e
@@ -84,14 +119,25 @@ jobs:
 
           test -f "$PROJECT_DIR/app/src/main/res/drawable-nodpi/taxi_driver_premium_logo.png"
 
-          echo "MainActivity found:"
+          echo "======================================"
+          echo "PROJECT VERIFICATION"
+          echo "======================================"
+
+          echo "MainActivity:"
           echo "$MAIN_FILE"
 
-          echo "HTML found:"
+          echo "HTML:"
           echo "$PROJECT_DIR/app/src/main/assets/index.html"
 
-          echo "Premium logo found."
+          echo "Premium logo:"
+          echo "FOUND"
 
+          echo "======================================"
+
+
+      # ==============================
+      # FIX PREMIUM CALLBACK
+      # ==============================
       - name: Fix Premium Callback
         run: |
           set -e
@@ -123,7 +169,11 @@ jobs:
           echo "Checking Premium callback:"
           grep -n "showPremiumPlans" "$MAIN_FILE" || true
 
-      - name: Configure Version 1.0.9
+
+      # ==============================
+      # CONFIGURE VERSION 1.1.0
+      # ==============================
+      - name: Configure Version 1.1.0
         run: |
           set -e
 
@@ -135,20 +185,23 @@ jobs:
           p = Path(sys.argv[1])
           s = p.read_text()
 
+          # Version Code
           s = re.sub(
               r'versionCode\s+\d+',
-              'versionCode 109',
+              'versionCode 110',
               s,
               count=1
           )
 
+          # Version Name
           s = re.sub(
               r'versionName\s+["\'][^"\']+["\']',
-              'versionName "1.0.9"',
+              'versionName "1.1.0"',
               s,
               count=1
           )
 
+          # Compile SDK
           s = re.sub(
               r'compileSdk\s+\d+',
               'compileSdk 36',
@@ -156,6 +209,7 @@ jobs:
               count=1
           )
 
+          # Target SDK
           s = re.sub(
               r'targetSdk\s+\d+',
               'targetSdk 36',
@@ -163,6 +217,7 @@ jobs:
               count=1
           )
 
+          # Minimum SDK
           s = re.sub(
               r'minSdk\s+\d+',
               'minSdk 23',
@@ -175,11 +230,20 @@ jobs:
           print("Version configuration completed.")
           PY
 
-          echo "===== BUILD CONFIGURATION ====="
-          grep -E "versionCode|versionName|compileSdk|minSdk|targetSdk" \
-            "$PROJECT_DIR/app/build.gradle" || true
-          echo "================================"
+          echo "======================================"
+          echo "FINAL BUILD CONFIGURATION"
+          echo "======================================"
 
+          grep -E \
+            "versionCode|versionName|compileSdk|minSdk|targetSdk" \
+            "$PROJECT_DIR/app/build.gradle" || true
+
+          echo "======================================"
+
+
+      # ==============================
+      # BUILD AAB + APK
+      # ==============================
       - name: Build Release AAB and APK
         run: |
           set -e
@@ -191,8 +255,14 @@ jobs:
             --stacktrace \
             --console=plain
 
-          echo "AAB + APK build completed."
+          echo "======================================"
+          echo "AAB + APK BUILD COMPLETED"
+          echo "======================================"
 
+
+      # ==============================
+      # PREPARE SIGNING KEY
+      # ==============================
       - name: Prepare Signing Key
         run: |
           set -e
@@ -206,6 +276,10 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
 
+
+      # ==============================
+      # SIGN AAB
+      # ==============================
       - name: Sign AAB
         run: |
           set -e
@@ -219,8 +293,10 @@ jobs:
 
           test -n "$AAB"
 
-          echo "Unsigned AAB:"
+          echo "======================================"
+          echo "UNSIGNED AAB:"
           echo "$AAB"
+          echo "======================================"
 
           jarsigner \
             -verbose \
@@ -232,10 +308,14 @@ jobs:
             "$AAB" \
             "$KEY_ALIAS"
 
-          jarsigner -verify -verbose -certs "$AAB"
+          jarsigner \
+            -verify \
+            -verbose \
+            -certs \
+            "$AAB"
 
           cp "$AAB" \
-            "output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.aab"
+            "output/Taxi-Driver-1.1.0-Premium-110-Currency-Signed.aab"
 
           echo "Signed AAB created."
 
@@ -244,6 +324,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
+
+      # ==============================
+      # SIGN APK
+      # ==============================
       - name: Sign APK
         run: |
           set -e
@@ -255,27 +339,33 @@ jobs:
 
           test -n "$APK"
 
-          echo "Unsigned APK:"
+          echo "======================================"
+          echo "UNSIGNED APK:"
           echo "$APK"
+          echo "======================================"
 
           BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/36.0.0"
 
+          # ZIPALIGN
           "$BUILD_TOOLS/zipalign" \
             -f 4 \
             "$APK" \
             aligned.apk
 
+          # APK SIGN
           "$BUILD_TOOLS/apksigner" sign \
             --ks release.keystore \
             --ks-pass env:KEYSTORE_PASSWORD \
             --ks-key-alias "$KEY_ALIAS" \
             --key-pass env:KEY_PASSWORD \
-            --out "output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.apk" \
+            --out \
+            "output/Taxi-Driver-1.1.0-Premium-110-Currency-Signed.apk" \
             aligned.apk
 
+          # VERIFY APK
           "$BUILD_TOOLS/apksigner" verify \
             --verbose \
-            "output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.apk"
+            "output/Taxi-Driver-1.1.0-Premium-110-Currency-Signed.apk"
 
           echo "Signed APK created."
 
@@ -284,6 +374,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
+
+      # ==============================
+      # SHOW FINAL FILES
+      # ==============================
       - name: Show Final Files
         run: |
           echo "======================================"
@@ -294,11 +388,25 @@ jobs:
 
           echo "======================================"
 
+          echo "Expected AAB:"
+          echo "Taxi-Driver-1.1.0-Premium-110-Currency-Signed.aab"
+
+          echo "Expected APK:"
+          echo "Taxi-Driver-1.1.0-Premium-110-Currency-Signed.apk"
+
+          echo "======================================"
+
+
+      # ==============================
+      # UPLOAD AAB + APK
+      # ==============================
       - name: Upload AAB + APK
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.0.9-Premium-109-Currency-AAB-APK
+          name: Taxi-Driver-1.1.0-Premium-110-Currency-AAB-APK
+
           path: |
-            output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.aab
-            output/Taxi-Driver-1.0.9-Premium-109-Currency-Signed.apk
+            output/Taxi-Driver-1.1.0-Premium-110-Currency-Signed.aab
+            output/Taxi-Driver-1.1.0-Premium-110-Currency-Signed.apk
+
           if-no-files-found: error
