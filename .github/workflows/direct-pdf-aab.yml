@@ -36,7 +36,6 @@ jobs:
           echo "$ZIP"
 
           if [ ! -f "$ZIP" ]; then
-            echo ""
             echo "ERROR: FINAL ZIP NOT FOUND"
             echo ""
             echo "Repository files:"
@@ -72,7 +71,6 @@ jobs:
             if [ -z "$FOUND_DIR" ]; then
               echo "ERROR: taxi_work folder was not found."
               echo ""
-              echo "Extracted files:"
               find extracted_final -maxdepth 4 -type f | sort
               exit 1
             fi
@@ -153,19 +151,67 @@ jobs:
 
       # ============================================================
       # 6. SETUP ANDROID SDK
-      # IMPORTANT:
-      # Do NOT install old "tools" package.
       # ============================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
 
       # ============================================================
-      # 7. VERIFY ANDROID SDK
+      # 7. INSTALL ONLY REQUIRED ANDROID SDK PACKAGES
+      #
+      # IMPORTANT:
+      # We DO NOT install platform-tools.
+      # We DO NOT use the "packages:" input.
+      # ============================================================
+      - name: Install Android 36 SDK
+        shell: bash
+        run: |
+          set -e
+
+          echo "ANDROID_HOME=$ANDROID_HOME"
+
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f \
+            -name sdkmanager \
+            -print -quit 2>/dev/null || true)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager || true)"
+          fi
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found."
+            exit 1
+          fi
+
+          echo "Using sdkmanager:"
+          echo "$SDKMANAGER"
+
+          echo ""
+          echo "Accepting Android SDK licenses..."
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" \
+            --licenses || true
+
+          echo ""
+          echo "Installing Android Platform 36..."
+
+          "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" \
+            "platforms;android-36"
+
+          echo ""
+          echo "Installing Build Tools 36.0.0..."
+
+          "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" \
+            "build-tools;36.0.0"
+
+          echo ""
+          echo "Android SDK installation completed."
+
+      # ============================================================
+      # 8. VERIFY ANDROID SDK
       # ============================================================
       - name: Verify Android SDK 36
         shell: bash
@@ -173,25 +219,29 @@ jobs:
           set -e
 
           echo "Checking Android Platform 36..."
+
           test -d "$ANDROID_HOME/platforms/android-36"
 
           echo "Android Platform 36: OK"
 
           echo ""
           echo "Checking Build Tools 36.0.0..."
+
           test -d "$ANDROID_HOME/build-tools/36.0.0"
 
           echo "Build Tools 36.0.0: OK"
 
           echo ""
-          echo "Checking ADB..."
-          "$ANDROID_HOME/platform-tools/adb" version
+          echo "Checking installed Android SDK..."
+
+          ls -la "$ANDROID_HOME/platforms" || true
+          ls -la "$ANDROID_HOME/build-tools" || true
 
           echo ""
-          echo "Android SDK verification PASSED."
+          echo "ANDROID SDK VERIFICATION PASSED."
 
       # ============================================================
-      # 8. SETUP GRADLE
+      # 9. SETUP GRADLE 8.10.2
       # ============================================================
       - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
@@ -199,7 +249,7 @@ jobs:
           gradle-version: "8.10.2"
 
       # ============================================================
-      # 9. CHECK ANDROID PROJECT
+      # 10. CHECK ANDROID PROJECT
       # ============================================================
       - name: Check Android project
         working-directory: taxi_work
@@ -207,20 +257,22 @@ jobs:
         run: |
           set -e
 
-          echo "Project files:"
-          ls -la
+          echo "Project root:"
+          pwd
 
           echo ""
-          echo "Gradle files:"
-          find . -maxdepth 3 \
-            \( -name "build.gradle" \
-            -o -name "build.gradle.kts" \
-            -o -name "settings.gradle" \
-            -o -name "settings.gradle.kts" \) \
-            -print
+          echo "Project files:"
+          find . -maxdepth 3 -type f | sort | head -200
+
+          echo ""
+          echo "Checking app/build.gradle..."
+
+          test -f app/build.gradle
+
+          echo "app/build.gradle: OK"
 
       # ============================================================
-      # 10. VERIFY VERSION / SDK
+      # 11. VERIFY VERSION AND SDK
       # ============================================================
       - name: Verify Version 1.1.0 Code 110 SDK 36
         shell: bash
@@ -229,16 +281,31 @@ jobs:
 
           BUILD="taxi_work/app/build.gradle"
 
-          if [ ! -f "$BUILD" ]; then
-            echo "ERROR: app/build.gradle NOT FOUND"
-            exit 1
-          fi
-
-          echo "Checking version information..."
+          echo "Checking build configuration..."
 
           grep -nE \
-            "versionCode|versionName|compileSdk|targetSdk" \
-            "$BUILD" || true
+            "compileSdk|targetSdk|versionCode|versionName" \
+            "$BUILD"
+
+          echo ""
+          echo "Checking compileSdk 36..."
+
+          grep -Eq "compileSdk[[:space:]]+36" "$BUILD" || {
+            echo "ERROR: compileSdk 36 not found."
+            exit 1
+          }
+
+          echo "compileSdk 36: OK"
+
+          echo ""
+          echo "Checking targetSdk 36..."
+
+          grep -Eq "targetSdk[[:space:]]+36" "$BUILD" || {
+            echo "ERROR: targetSdk 36 not found."
+            exit 1
+          }
+
+          echo "targetSdk 36: OK"
 
           echo ""
           echo "Checking versionCode 110..."
@@ -262,28 +329,8 @@ jobs:
 
           echo "versionName 1.1.0: OK"
 
-          echo ""
-          echo "Checking targetSdk 36..."
-
-          grep -Eq "targetSdk[[:space:]]+36" "$BUILD" || {
-            echo "ERROR: targetSdk 36 not found."
-            exit 1
-          }
-
-          echo "targetSdk 36: OK"
-
-          echo ""
-          echo "Checking compileSdk 36..."
-
-          grep -Eq "compileSdk[[:space:]]+36" "$BUILD" || {
-            echo "ERROR: compileSdk 36 not found."
-            exit 1
-          }
-
-          echo "compileSdk 36: OK"
-
       # ============================================================
-      # 11. CHECK SIGNING SECRETS
+      # 12. CHECK SIGNING SECRETS
       # ============================================================
       - name: Check signing secrets
         shell: bash
@@ -318,7 +365,7 @@ jobs:
           echo "Signing secrets: OK"
 
       # ============================================================
-      # 12. PREPARE KEYSTORE
+      # 13. PREPARE KEYSTORE
       # ============================================================
       - name: Prepare signing keystore
         shell: bash
@@ -337,7 +384,7 @@ jobs:
           echo "Keystore: OK"
 
       # ============================================================
-      # 13. BUILD AAB + APK
+      # 14. BUILD AAB + APK
       # ============================================================
       - name: Build Release AAB and APK
         working-directory: taxi_work
@@ -359,7 +406,7 @@ jobs:
           find app/build/outputs -type f | sort
 
       # ============================================================
-      # 14. CHECK AAB
+      # 15. CHECK AAB
       # ============================================================
       - name: Check AAB
         shell: bash
@@ -373,11 +420,11 @@ jobs:
             exit 1
           }
 
-          echo "AAB created successfully:"
+          echo "AAB created:"
           ls -lh "$AAB"
 
       # ============================================================
-      # 15. SIGN AAB
+      # 16. SIGN AAB
       # ============================================================
       - name: Sign AAB
         shell: bash
@@ -402,7 +449,7 @@ jobs:
           echo "AAB signed successfully."
 
       # ============================================================
-      # 16. VERIFY AAB
+      # 17. VERIFY AAB
       # ============================================================
       - name: Verify AAB Signature
         shell: bash
@@ -418,7 +465,7 @@ jobs:
           echo "AAB signature VERIFIED."
 
       # ============================================================
-      # 17. ALIGN APK
+      # 18. ALIGN APK
       # ============================================================
       - name: Align APK
         shell: bash
@@ -442,7 +489,7 @@ jobs:
           echo "APK aligned."
 
       # ============================================================
-      # 18. SIGN APK
+      # 19. SIGN APK
       # ============================================================
       - name: Sign APK
         shell: bash
@@ -465,7 +512,7 @@ jobs:
           echo "APK signed successfully."
 
       # ============================================================
-      # 19. VERIFY APK
+      # 20. VERIFY APK
       # ============================================================
       - name: Verify APK Signature
         shell: bash
@@ -480,7 +527,7 @@ jobs:
           echo "APK signature VERIFIED."
 
       # ============================================================
-      # 20. CREATE FINAL FILES
+      # 21. CREATE FINAL RELEASE FILES
       # ============================================================
       - name: Create final release files
         shell: bash
@@ -500,13 +547,13 @@ jobs:
 
           echo ""
           echo "=========================================="
-          echo "FINAL AAB + APK"
+          echo "FINAL RELEASE FILES"
           echo "=========================================="
 
           ls -lh output/
 
       # ============================================================
-      # 21. UPLOAD ARTIFACTS
+      # 22. UPLOAD AAB + APK
       # ============================================================
       - name: Upload AAB and APK
         uses: actions/upload-artifact@v4
