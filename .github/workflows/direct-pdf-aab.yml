@@ -188,6 +188,106 @@ jobs:
 
 
       # ==================================================
+      # 7.5. APPLY RESET ALL DATA FIX
+      # ==================================================
+      - name: Apply Reset All Data Fix
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "APPLYING RESET ALL DATA FIX"
+          echo "=========================================="
+
+          INDEX_FILE="$(
+            find taxi_source \
+              -type f \
+              -path "*/app/src/main/assets/index.html" \
+              -print -quit
+          )"
+
+          if [ -z "$INDEX_FILE" ]; then
+            echo "ERROR: index.html not found."
+            exit 1
+          fi
+
+          echo "Reset fix target:"
+          echo "$INDEX_FILE"
+
+          python3 - "$INDEX_FILE" <<'PY'
+          import sys
+
+          path = sys.argv[1]
+
+          with open(path, "r", encoding="utf-8") as f:
+              s = f.read()
+
+          old = """localStorage.removeItem(key);
+    localStorage.removeItem(key+'_archive');"""
+
+          new = """localStorage.removeItem(key);
+    localStorage.removeItem(key+'_archive');
+
+    // FIX: Delete ALL monthly stored trip data
+    for(let i = localStorage.length - 1; i >= 0; i--){
+      const k = localStorage.key(i);
+
+      if(k && k.indexOf(monthlyEntriesPrefix) === 0){
+        localStorage.removeItem(k);
+      }
+    }"""
+
+          if old not in s:
+              raise SystemExit(
+                  "ERROR: Reset function pattern not found. "
+                  "No changes made."
+              )
+
+          s = s.replace(old, new, 1)
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(s)
+
+          print("SUCCESS: Reset All Data monthly-storage fix applied.")
+          PY
+
+
+      # ==================================================
+      # 7.6. VERIFY RESET FIX
+      # ==================================================
+      - name: Verify Reset Fix
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "VERIFYING RESET FIX"
+          echo "=========================================="
+
+          INDEX_FILE="$(
+            find taxi_source \
+              -type f \
+              -path "*/app/src/main/assets/index.html" \
+              -print -quit
+          )"
+
+          if [ -z "$INDEX_FILE" ]; then
+            echo "ERROR: index.html not found."
+            exit 1
+          fi
+
+          if grep -q "Delete ALL monthly stored trip data" "$INDEX_FILE"; then
+            echo "RESET FIX: OK"
+          else
+            echo "ERROR: RESET FIX NOT FOUND."
+            exit 1
+          fi
+
+          echo ""
+          echo "Reset All Data fix verified successfully."
+
+
+      # ==================================================
       # 8. FIND ANDROID PROJECT
       # ==================================================
       - name: Find Android project
@@ -368,7 +468,11 @@ jobs:
           echo ""
           echo "CUMULATIVE MODE:"
           echo "No automatic monthly deletion is performed."
-          echo "No monthly reset command is performed."
+          echo "No automatic monthly reset is performed."
+
+          echo ""
+          echo "RESET ALL DATA:"
+          echo "Monthly stored data will be deleted by Reset All Data."
 
 
       # ==================================================
