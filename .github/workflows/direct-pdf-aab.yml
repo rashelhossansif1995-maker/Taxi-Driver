@@ -1,4 +1,4 @@
-name: Taxi Driver 1.1.0 FINAL - AAB APK
+name: Taxi Driver 1.1.1 Final - AAB + APK
 
 on:
   workflow_dispatch:
@@ -11,188 +11,20 @@ permissions:
 
 jobs:
   build:
-    name: Build Taxi Driver 1.1.0 FINAL
+    name: Build Taxi Driver 1.1.1
     runs-on: ubuntu-latest
 
     steps:
 
       # ==========================================
-      # 1. CHECKOUT REPOSITORY
+      # 1. CHECKOUT
       # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
       # ==========================================
-      # 2. FIND FINAL ZIP
-      # ==========================================
-      - name: Find FINAL ZIP
-        shell: bash
-        run: |
-          set -e
-
-          ZIP="Taxi_Driver_1.1.0_FINAL_OVERPAYMENT_BACKUP_RESTORE_FIXED_GITHUB.zip"
-
-          echo "Checking FINAL ZIP..."
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERROR: FINAL ZIP NOT FOUND"
-            echo ""
-            echo "Expected file:"
-            echo "$ZIP"
-            echo ""
-            echo "Repository files:"
-            find . -maxdepth 3 -type f | sort
-            exit 1
-          fi
-
-          echo ""
-          echo "FINAL ZIP FOUND:"
-          ls -lh "$ZIP"
-
-
-      # ==========================================
-      # 3. EXTRACT FINAL ZIP
-      # ==========================================
-      - name: Extract FINAL ZIP
-        shell: bash
-        run: |
-          set -e
-
-          rm -rf extracted_final taxi_work
-
-          mkdir -p extracted_final
-
-          unzip -q \
-            "Taxi_Driver_1.1.0_FINAL_OVERPAYMENT_BACKUP_RESTORE_FIXED_GITHUB.zip" \
-            -d extracted_final
-
-          if [ -d "extracted_final/taxi_work" ]; then
-            cp -R "extracted_final/taxi_work" "taxi_work"
-          else
-
-            FOUND_DIR=$(find extracted_final \
-              -type d \
-              -name "taxi_work" \
-              -print -quit)
-
-            if [ -z "$FOUND_DIR" ]; then
-              echo "ERROR: taxi_work folder not found."
-              find extracted_final -maxdepth 4 -type f | sort
-              exit 1
-            fi
-
-            cp -R "$FOUND_DIR" "taxi_work"
-          fi
-
-          echo ""
-          echo "FINAL PROJECT:"
-          find taxi_work -maxdepth 4 -type f | sort | head -300
-
-
-      # ==========================================
-      # 4. SET MINIMUM SDK 24
-      # ==========================================
-      - name: Set Minimum SDK 24
-        shell: bash
-        run: |
-          set -e
-
-          BUILD="taxi_work/app/build.gradle"
-
-          if [ ! -f "$BUILD" ]; then
-            echo "ERROR: app/build.gradle NOT FOUND"
-            exit 1
-          fi
-
-          echo "=========================================="
-          echo "SETTING MIN SDK 24"
-          echo "=========================================="
-
-          echo ""
-          echo "Before:"
-          grep -n "minSdk" "$BUILD" || true
-
-          sed -i -E \
-            's/minSdk[[:space:]]+[0-9]+/minSdk 24/' \
-            "$BUILD"
-
-          echo ""
-          echo "After:"
-          grep -n "minSdk" "$BUILD"
-
-          grep -Eq \
-            "minSdk[[:space:]]+24" \
-            "$BUILD" || {
-              echo "ERROR: Could not set minSdk 24"
-              exit 1
-            }
-
-          echo ""
-          echo "minSdk 24: OK"
-
-
-      # ==========================================
-      # 5. VERIFY OVERPAYMENT + BACKUP
-      # ==========================================
-      - name: Verify Overpayment and Backup
-        shell: bash
-        run: |
-          set -e
-
-          HTML="taxi_work/app/src/main/assets/index.html"
-
-          if [ ! -f "$HTML" ]; then
-            echo "ERROR: index.html NOT FOUND"
-            exit 1
-          fi
-
-          echo "Checking OVERPAYMENT..."
-
-          grep -Fqi "overpayment" "$HTML" || {
-            echo "ERROR: OVERPAYMENT NOT FOUND"
-            exit 1
-          }
-
-          echo "OVERPAYMENT: OK"
-
-          echo ""
-          echo "Checking Financial Loan removal..."
-
-          if grep -Fqi "Financial Loan" "$HTML"; then
-            echo "ERROR: Financial Loan still exists."
-            grep -Fin "Financial Loan" "$HTML" | head -30
-            exit 1
-          fi
-
-          echo "Financial Loan: REMOVED"
-
-          echo ""
-          echo "Checking Export Backup..."
-
-          grep -Fq "backupData" "$HTML" || {
-            echo "ERROR: backupData NOT FOUND"
-            exit 1
-          }
-
-          echo "Export Backup: OK"
-
-          echo ""
-          echo "Checking Restore Backup..."
-
-          grep -Fq "restoreData" "$HTML" || {
-            echo "ERROR: restoreData NOT FOUND"
-            exit 1
-          }
-
-          echo "Restore Backup: OK"
-
-          echo ""
-          echo "FINAL HTML CHECK: PASSED"
-
-
-      # ==========================================
-      # 6. SETUP JDK 17
+      # 2. SETUP JAVA 17
       # ==========================================
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -202,108 +34,22 @@ jobs:
 
 
       # ==========================================
-      # 7. SETUP ANDROID SDK
+      # 3. SETUP ANDROID SDK
       # ==========================================
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: ""
+        uses: android-actions/setup-android@v3
 
 
       # ==========================================
-      # 8. INSTALL ANDROID 36
+      # 4. INSTALL ANDROID 36
       # ==========================================
-      - name: Install Android 36 SDK
-        shell: bash
+      - name: Install Android SDK 36
         run: |
-          set -e
-
-          echo "ANDROID_HOME=$ANDROID_HOME"
-
-          SDKMANAGER="$(command -v sdkmanager || true)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER="$(
-              find "$ANDROID_HOME/cmdline-tools" \
-              -type f \
-              -name sdkmanager \
-              -print -quit \
-              2>/dev/null || true
-            )"
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found."
-            exit 1
-          fi
-
-          echo ""
-          echo "Using sdkmanager:"
-          echo "$SDKMANAGER"
-
-          echo ""
-          echo "Installing Android Platform 36..."
-
-          "$SDKMANAGER" \
-            --sdk_root="$ANDROID_HOME" \
-            "platforms;android-36"
-
-          echo ""
-          echo "Installing Build Tools 36.0.0..."
-
-          "$SDKMANAGER" \
-            --sdk_root="$ANDROID_HOME" \
-            "build-tools;36.0.0"
-
-          echo ""
-          echo "Android SDK installation completed."
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
 
       # ==========================================
-      # 9. VERIFY ANDROID SDK
-      # ==========================================
-      - name: Verify Android SDK
-        shell: bash
-        run: |
-          set -e
-
-          echo "Checking Android Platform 36..."
-
-          test -d \
-            "$ANDROID_HOME/platforms/android-36"
-
-          echo "Platform 36: OK"
-
-          echo ""
-          echo "Checking Build Tools 36.0.0..."
-
-          test -d \
-            "$ANDROID_HOME/build-tools/36.0.0"
-
-          echo "Build Tools 36.0.0: OK"
-
-          echo ""
-          echo "Checking zipalign..."
-
-          test -f \
-            "$ANDROID_HOME/build-tools/36.0.0/zipalign"
-
-          echo "zipalign: OK"
-
-          echo ""
-          echo "Checking apksigner..."
-
-          test -f \
-            "$ANDROID_HOME/build-tools/36.0.0/apksigner"
-
-          echo "apksigner: OK"
-
-          echo ""
-          echo "ANDROID SDK CHECK: PASSED"
-
-
-      # ==========================================
-      # 10. SETUP GRADLE
+      # 5. SETUP GRADLE
       # ==========================================
       - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
@@ -312,237 +58,154 @@ jobs:
 
 
       # ==========================================
-      # 11. CHECK ANDROID PROJECT
+      # 6. FIND 1.1.1 SOURCE ZIP
       # ==========================================
-      - name: Check Android Project
-        working-directory: taxi_work
+      - name: Find 1.1.1 source ZIP
         shell: bash
         run: |
           set -e
 
-          echo "Project:"
-          pwd
+          echo "Searching for Taxi Driver 1.1.1 source ZIP..."
 
-          echo ""
-          echo "Files:"
+          ZIP_FILE="$(find . -maxdepth 3 -type f \
+            -name 'Taxi-Driver-1.1.1-FINAL-FIXED.zip' \
+            -print -quit)"
 
-          find . \
-            -maxdepth 4 \
-            -type f \
-            | sort \
-            | head -300
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Taxi-Driver-1.1.1-FINAL-FIXED.zip not found."
+            echo ""
+            echo "Repository files:"
+            find . -maxdepth 3 -type f | sort
+            exit 1
+          fi
 
-          test -f app/build.gradle
+          echo "FOUND:"
+          echo "$ZIP_FILE"
 
-          echo ""
-          echo "app/build.gradle: FOUND"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
 
       # ==========================================
-      # 12. VERIFY VERSION + SDK
+      # 7. EXTRACT SOURCE ZIP
       # ==========================================
-      - name: Verify Version 1.1.0 Code 110 SDK 36 Min SDK 24
+      - name: Extract 1.1.1 source
         shell: bash
         run: |
           set -e
 
-          BUILD="taxi_work/app/build.gradle"
+          rm -rf extracted_source
+          mkdir -p extracted_source
 
-          echo "=========================================="
-          echo "VERSION / SDK CHECK"
-          echo "=========================================="
+          unzip -q "$ZIP_FILE" -d extracted_source
 
-          echo ""
-          echo "Current configuration:"
-
-          grep -nE \
-            "compileSdk|minSdk|targetSdk|versionCode|versionName" \
-            "$BUILD"
-
-          echo ""
-          echo "Checking compileSdk 36..."
-
-          grep -Eq \
-            "compileSdk[[:space:]]+36" \
-            "$BUILD" || {
-              echo "ERROR: compileSdk 36 NOT FOUND"
-              exit 1
-            }
-
-          echo "compileSdk 36: OK"
-
-          echo ""
-          echo "Checking minSdk 24..."
-
-          grep -Eq \
-            "minSdk[[:space:]]+24" \
-            "$BUILD" || {
-              echo "ERROR: minSdk 24 NOT FOUND"
-              exit 1
-            }
-
-          echo "minSdk 24: OK"
-
-          echo ""
-          echo "Checking targetSdk 36..."
-
-          grep -Eq \
-            "targetSdk[[:space:]]+36" \
-            "$BUILD" || {
-              echo "ERROR: targetSdk 36 NOT FOUND"
-              exit 1
-            }
-
-          echo "targetSdk 36: OK"
-
-          echo ""
-          echo "Checking versionCode 110..."
-
-          grep -Eq \
-            "versionCode[[:space:]]+110" \
-            "$BUILD" || {
-              echo "ERROR: versionCode 110 NOT FOUND"
-              exit 1
-            }
-
-          echo "versionCode 110: OK"
-
-          echo ""
-          echo "Checking versionName 1.1.0..."
-
-          grep -Eq \
-            "versionName[[:space:]]+['\"]1\.1\.0['\"]" \
-            "$BUILD" || {
-              echo "ERROR: versionName 1.1.0 NOT FOUND"
-              exit 1
-            }
-
-          echo "versionName 1.1.0: OK"
-
-          echo ""
-          echo "VERSION / SDK CHECK: PASSED"
+          echo "Extracted files:"
+          find extracted_source -maxdepth 4 -type f | sort
 
 
       # ==========================================
-      # 13. CHECK SIGNING SECRETS
+      # 8. FIND taxi_work PROJECT
       # ==========================================
-      - name: Check Signing Secrets
+      - name: Find Android project
         shell: bash
+        run: |
+          set -e
+
+          PROJECT_DIR=""
+
+          if [ -f "extracted_source/taxi_work/app/build.gradle" ]; then
+            PROJECT_DIR="extracted_source/taxi_work"
+          else
+            FOUND="$(find extracted_source \
+              -type f \
+              -path '*/app/build.gradle' \
+              -print -quit || true)"
+
+            if [ -n "$FOUND" ]; then
+              PROJECT_DIR="$(dirname "$(dirname "$FOUND")")"
+            fi
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android project was not found."
+            find extracted_source -maxdepth 6 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+
+          echo "ANDROID PROJECT:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+
+      # ==========================================
+      # 9. VERIFY VERSION
+      # ==========================================
+      - name: Verify Version 1.1.1
+        shell: bash
+        run: |
+          set -e
+
+          echo "Checking Version Code and Version Name..."
+
+          grep -R \
+            -n \
+            -E \
+            "versionCode|versionName|targetSdk|compileSdk" \
+            "$PROJECT_DIR/app/build.gradle"
+
+          echo ""
+          echo "Expected:"
+          echo "Version Code = 111"
+          echo "Version Name = 1.1.1"
+          echo "Target SDK   = 36"
+
+
+      # ==========================================
+      # 10. PREPARE SIGNING KEYSTORE
+      # ==========================================
+      - name: Prepare signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -e
-
-          test -n "$KEYSTORE_BASE64" || {
-            echo "ERROR: KEYSTORE_BASE64 missing"
-            exit 1
-          }
-
-          test -n "$KEYSTORE_PASSWORD" || {
-            echo "ERROR: KEYSTORE_PASSWORD missing"
-            exit 1
-          }
-
-          test -n "$KEY_ALIAS" || {
-            echo "ERROR: KEY_ALIAS missing"
-            exit 1
-          }
-
-          test -n "$KEY_PASSWORD" || {
-            echo "ERROR: KEY_PASSWORD missing"
-            exit 1
-          }
-
-          echo "SIGNING SECRETS: OK"
-
-
-      # ==========================================
-      # 14. PREPARE SIGNING KEYSTORE
-      # ==========================================
-      - name: Prepare Signing Keystore
-        shell: bash
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          set -e
-
-          echo "$KEYSTORE_BASE64" \
-            | base64 --decode \
-            > taxi-release.keystore
-
-          test -s taxi-release.keystore || {
-            echo "ERROR: Keystore creation failed"
-            exit 1
-          }
-
-          echo "KEYSTORE: READY"
-
-
-      # ==========================================
-      # 15. BUILD RELEASE AAB + APK
-      # ==========================================
-      - name: Build Release AAB and APK
-        working-directory: taxi_work
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo "BUILDING TAXI DRIVER 1.1.0"
-          echo "=========================================="
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ERROR: KEYSTORE_BASE64 secret is missing."
+            exit 1
+          fi
 
-          gradle \
-            clean \
-            bundleRelease \
-            assembleRelease \
-            --no-daemon
+          echo "$KEYSTORE_BASE64" | base64 --decode > taxi-release.keystore
 
-          echo ""
-          echo "BUILD COMPLETED"
+          test -s taxi-release.keystore
 
-          echo ""
-          echo "BUILD OUTPUTS:"
-
-          find app/build/outputs \
-            -type f \
-            | sort
+          echo "Keystore prepared successfully."
 
 
       # ==========================================
-      # 16. CHECK AAB
+      # 11. BUILD RELEASE AAB + APK
       # ==========================================
-      - name: Check AAB
-        shell: bash
+      - name: Build release AAB + APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
 
-          AAB="taxi_work/app/build/outputs/bundle/release/app-release.aab"
-
-          test -f "$AAB" || {
-            echo "ERROR: AAB NOT CREATED"
-            exit 1
-          }
-
-          echo "AAB CREATED:"
-          ls -lh "$AAB"
+          gradle clean bundleRelease assembleRelease --stacktrace
 
 
       # ==========================================
-      # 17. SIGN AAB
+      # 12. SIGN AAB
       # ==========================================
       - name: Sign AAB
-        shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
         run: |
           set -e
-
-          AAB="taxi_work/app/build/outputs/bundle/release/app-release.aab"
 
           jarsigner \
             -keystore taxi-release.keystore \
@@ -550,17 +213,14 @@ jobs:
             -keypass "$KEY_PASSWORD" \
             -sigalg SHA256withRSA \
             -digestalg SHA-256 \
-            "$AAB" \
+            "${PROJECT_DIR}/app/build/outputs/bundle/release/app-release.aab" \
             "$KEY_ALIAS"
 
-          echo "AAB SIGNED"
-
 
       # ==========================================
-      # 18. VERIFY AAB SIGNATURE
+      # 13. VERIFY AAB
       # ==========================================
-      - name: Verify AAB Signature
-        shell: bash
+      - name: Verify signed AAB
         run: |
           set -e
 
@@ -568,49 +228,28 @@ jobs:
             -verify \
             -verbose \
             -certs \
-            taxi_work/app/build/outputs/bundle/release/app-release.aab
-
-          echo "AAB SIGNATURE: VERIFIED"
+            "${PROJECT_DIR}/app/build/outputs/bundle/release/app-release.aab"
 
 
       # ==========================================
-      # 19. PREPARE APK
+      # 14. ALIGN APK
       # ==========================================
-      - name: Prepare APK
-        shell: bash
+      - name: Align APK
         run: |
           set -e
-
-          APK="taxi_work/app/build/outputs/apk/release/app-release-unsigned.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: unsigned APK NOT FOUND"
-
-            echo ""
-            echo "APK files:"
-
-            find taxi_work/app/build/outputs/apk \
-              -type f \
-              | sort
-
-            exit 1
-          fi
 
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
             -f \
             -p \
             4 \
-            "$APK" \
+            "${PROJECT_DIR}/app/build/outputs/apk/release/app-release-unsigned.apk" \
             taxi-unsigned-aligned.apk
 
-          echo "APK ALIGNED"
-
 
       # ==========================================
-      # 20. SIGN APK
+      # 15. SIGN APK
       # ==========================================
       - name: Sign APK
-        shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -618,8 +257,7 @@ jobs:
         run: |
           set -e
 
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
-            sign \
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
             --ks taxi-release.keystore \
             --ks-pass pass:"$KEYSTORE_PASSWORD" \
             --ks-key-alias "$KEY_ALIAS" \
@@ -627,14 +265,11 @@ jobs:
             --out taxi-signed.apk \
             taxi-unsigned-aligned.apk
 
-          echo "APK SIGNED"
-
 
       # ==========================================
-      # 21. VERIFY APK SIGNATURE
+      # 16. VERIFY APK
       # ==========================================
-      - name: Verify APK Signature
-        shell: bash
+      - name: Verify signed APK
         run: |
           set -e
 
@@ -643,43 +278,35 @@ jobs:
             --verbose \
             taxi-signed.apk
 
-          echo "APK SIGNATURE: VERIFIED"
-
 
       # ==========================================
-      # 22. CREATE FINAL RELEASE FILES
+      # 17. PREPARE FINAL FILES
       # ==========================================
-      - name: Create Final Release Files
-        shell: bash
+      - name: Prepare final AAB + APK
         run: |
           set -e
-
-          rm -rf output
 
           mkdir -p output
 
           cp \
-            taxi_work/app/build/outputs/bundle/release/app-release.aab \
-            "output/Taxi-Driver-1.1.0-Premium-110-Currency-Signed.aab"
+            "${PROJECT_DIR}/app/build/outputs/bundle/release/app-release.aab" \
+            output/Taxi-Driver-1.1.1-Premium-111-Signed.aab
 
           cp \
             taxi-signed.apk \
-            "output/Taxi-Driver-1.1.0-Premium-110-Currency-Signed.apk"
+            output/Taxi-Driver-1.1.1-Premium-111-Signed.apk
 
-          echo ""
-          echo "=========================================="
-          echo "FINAL RELEASE"
-          echo "=========================================="
-
+          echo "FINAL FILES:"
           ls -lh output/
 
 
       # ==========================================
-      # 23. UPLOAD AAB + APK
+      # 18. UPLOAD ARTIFACTS
       # ==========================================
-      - name: Upload AAB and APK
+      - name: Upload AAB + APK
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.1.0-FINAL-Overpayment-Backup-Restore
-          path: output/
+          name: Taxi-Driver-1.1.1-Premium-111-AAB-APK
+          path: output/*
           if-no-files-found: error
+          retention-days: 30
