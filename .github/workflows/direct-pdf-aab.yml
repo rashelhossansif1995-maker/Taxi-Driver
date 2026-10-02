@@ -43,28 +43,70 @@ jobs:
 
 
       # ==========================================
-      # 4. ANDROID SDK
+      # 4. ANDROID SDK - FIXED
       # ==========================================
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-
-      # ==========================================
-      # 5. INSTALL SDK 36
-      # ==========================================
-      - name: Install Android SDK 36
         shell: bash
         run: |
           set -e
 
-          yes | sdkmanager --licenses >/dev/null || true
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-          sdkmanager \
+          SDKMANAGER=""
+
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          elif command -v sdkmanager >/dev/null 2>&1; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          else
+            echo "ERROR: sdkmanager not found."
+            exit 1
+          fi
+
+          echo "Using sdkmanager:"
+          echo "$SDKMANAGER"
+
+          echo "Accepting Android SDK licenses..."
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          echo "Installing required Android SDK packages..."
+
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-          echo "Android SDK 36 installed."
+          echo "Android SDK setup completed."
+
+
+      # ==========================================
+      # 5. VERIFY SDK
+      # ==========================================
+      - name: Verify Android SDK
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "ANDROID SDK VERIFICATION"
+          echo "=========================================="
+
+          if [ -d "$ANDROID_HOME/platforms/android-36" ]; then
+            echo "Android 36: OK"
+          else
+            echo "ERROR: Android 36 not installed."
+            exit 1
+          fi
+
+          if [ -d "$ANDROID_HOME/build-tools/36.0.0" ]; then
+            echo "Build Tools 36.0.0: OK"
+          else
+            echo "ERROR: Build Tools 36.0.0 not installed."
+            exit 1
+          fi
 
 
       # ==========================================
@@ -76,7 +118,7 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "SEARCHING ONLY FOR FINAL CUMULATIVE SOURCE"
+          echo "SEARCHING ONLY FINAL CUMULATIVE SOURCE"
           echo "=========================================="
 
           ZIP_FILE="$(find . \
@@ -86,13 +128,12 @@ jobs:
 
           if [ -z "$ZIP_FILE" ]; then
             echo ""
-            echo "ERROR!"
-            echo "FINAL CUMULATIVE SOURCE ZIP NOT FOUND."
+            echo "ERROR: FINAL CUMULATIVE SOURCE ZIP NOT FOUND."
             echo ""
-            echo "Required:"
+            echo "Required file:"
             echo "Taxi-Driver-1.1.1-FINAL-CUMULATIVE-SOURCE.zip"
             echo ""
-            echo "Repository ZIP files:"
+            echo "Available ZIP files:"
             find . \
               -type f \
               -name "*.zip" \
@@ -103,7 +144,9 @@ jobs:
           fi
 
           echo ""
-          echo "FOUND FINAL CUMULATIVE SOURCE:"
+          echo "=========================================="
+          echo "NEW CUMULATIVE SOURCE FOUND"
+          echo "=========================================="
           echo "$ZIP_FILE"
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
@@ -159,14 +202,17 @@ jobs:
 
           PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
-          echo "ANDROID PROJECT:"
+          echo "=========================================="
+          echo "ANDROID PROJECT FOUND"
+          echo "=========================================="
+
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
 
       # ==========================================
-      # 9. VERIFY INDEX.HTML
+      # 9. VERIFY FINAL CUMULATIVE HTML
       # ==========================================
       - name: Verify CUMULATIVE index.html
         shell: bash
@@ -187,28 +233,38 @@ jobs:
           ls -lh "$INDEX_FILE"
 
           echo ""
-          echo "Checking monthly filter..."
+          echo "Checking old monthly reset logic..."
 
-          if grep -q "startsWith(ms)" "$INDEX_FILE"; then
-            echo "ERROR: OLD MONTHLY FILTER STILL EXISTS!"
-            echo "Build stopped."
+          if grep -qiE \
+            "startsWith\(ms\)|monthly.*reset|reset.*monthly|month.*filter" \
+            "$INDEX_FILE"; then
+
+            echo ""
+            echo "ERROR:"
+            echo "OLD MONTHLY RESET/FILTER LOGIC DETECTED."
+            echo ""
+            echo "BUILD STOPPED."
             exit 1
           fi
 
-          echo "OK: OLD MONTHLY FILTER NOT FOUND."
+          echo "OK:"
+          echo "NO OLD MONTHLY RESET/FILTER LOGIC DETECTED."
 
 
       # ==========================================
-      # 10. VERIFY PROJECT
+      # 10. VERIFY PROJECT FILES
       # ==========================================
       - name: Verify project files
         shell: bash
         run: |
           set -e
 
-          echo "Gradle files:"
+          echo "=========================================="
+          echo "PROJECT FILES"
+          echo "=========================================="
+
           find "$PROJECT_DIR" \
-            -maxdepth 4 \
+            -maxdepth 5 \
             -type f \
             \( \
               -name "build.gradle" \
@@ -223,7 +279,7 @@ jobs:
 
 
       # ==========================================
-      # 11. PREPARE SIGNING KEY
+      # 11. PREPARE KEYSTORE
       # ==========================================
       - name: Prepare release keystore
         shell: bash
@@ -456,7 +512,7 @@ jobs:
 
 
       # ==========================================
-      # 23. UPLOAD ARTIFACTS
+      # 23. UPLOAD AAB + APK
       # ==========================================
       - name: Upload AAB and APK
         uses: actions/upload-artifact@v4
