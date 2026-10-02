@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   build:
-
     name: Build Taxi Driver 1.1.1 FINAL
     runs-on: ubuntu-latest
 
@@ -44,19 +43,12 @@ jobs:
 
 
       # ==================================================
-      # 4. ANDROID SDK - MANUAL SETUP
+      # 4. ANDROID SDK 36
       # ==================================================
       - name: Setup Android SDK
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo "ANDROID SDK SETUP"
-          echo "=========================================="
-
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
           SDKMANAGER=""
 
@@ -71,100 +63,54 @@ jobs:
             exit 1
           fi
 
-          echo "Using sdkmanager:"
-          echo "$SDKMANAGER"
-
-          echo ""
-          echo "Accepting licenses..."
-
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
-          echo ""
-          echo "Updating SDK package information..."
-
           "$SDKMANAGER" --update || true
-
-          echo ""
-          echo "Installing Android SDK packages..."
 
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-          echo ""
-          echo "Android SDK installation completed."
-
 
       # ==================================================
-      # 5. VERIFY ANDROID SDK
+      # 5. VERIFY SDK
       # ==================================================
       - name: Verify Android SDK
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo "ANDROID SDK VERIFICATION"
-          echo "=========================================="
+          test -d "$ANDROID_HOME/platform-tools"
+          test -d "$ANDROID_HOME/platforms/android-36"
+          test -d "$ANDROID_HOME/build-tools/36.0.0"
 
-          if [ -d "$ANDROID_HOME/platform-tools" ]; then
-            echo "platform-tools: OK"
-          else
-            echo "ERROR: platform-tools not installed."
-            exit 1
-          fi
-
-          if [ -d "$ANDROID_HOME/platforms/android-36" ]; then
-            echo "Android 36: OK"
-          else
-            echo "ERROR: Android 36 not installed."
-            exit 1
-          fi
-
-          if [ -d "$ANDROID_HOME/build-tools/36.0.0" ]; then
-            echo "Build Tools 36.0.0: OK"
-          else
-            echo "ERROR: Build Tools 36.0.0 not installed."
-            exit 1
-          fi
-
-          echo ""
-          echo "ANDROID SDK READY."
+          echo "Android SDK 36 READY."
 
 
       # ==================================================
-      # 6. FIND ONLY FINAL CUMULATIVE ZIP
+      # 6. FIND 1.1.1 SOURCE ZIP
       # ==================================================
-      - name: Find ONLY FINAL CUMULATIVE ZIP
+      - name: Find FINAL CUMULATIVE ZIP
         shell: bash
         run: |
           set -e
 
           ZIP_FILE="./Taxi-Driver-1.1.1-FINAL-CUMULATIVE-SOURCE.zip"
 
-          echo "=========================================="
-          echo "SEARCHING FINAL CUMULATIVE SOURCE"
-          echo "=========================================="
-
           if [ ! -f "$ZIP_FILE" ]; then
-
-            echo "ERROR: Required source ZIP not found."
-            echo ""
-            echo "Required file:"
+            echo "ERROR: Source ZIP not found:"
             echo "$ZIP_FILE"
             echo ""
             echo "Available ZIP files:"
             find . -type f -name "*.zip" -print | sort
-
             exit 1
           fi
 
-          echo ""
-          echo "FINAL CUMULATIVE SOURCE FOUND:"
-          echo "$ZIP_FILE"
-
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+          echo "Source ZIP found:"
+          echo "$ZIP_FILE"
 
 
       # ==================================================
@@ -180,15 +126,66 @@ jobs:
 
           unzip -q "$ZIP_FILE" -d taxi_source
 
-          echo "=========================================="
-          echo "SOURCE EXTRACTED"
-          echo "=========================================="
-
-          find taxi_source -maxdepth 6 -type f | sort
+          echo "Source extracted."
 
 
       # ==================================================
-      # 7.5. APPLY RESET ALL DATA FIX
+      # 8. FIND ANDROID PROJECT
+      # ==================================================
+      - name: Find Android project
+        shell: bash
+        run: |
+          set -e
+
+          SETTINGS_FILE="$(
+            find taxi_source \
+              -type f \
+              \( \
+                -name "settings.gradle" \
+                -o \
+                -name "settings.gradle.kts" \
+              \) \
+              -print -quit
+          )"
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Android project not found."
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+          PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Android project:"
+          echo "$PROJECT_DIR"
+
+
+      # ==================================================
+      # 9. FIND INDEX.HTML
+      # ==================================================
+      - name: Find index.html
+        shell: bash
+        run: |
+          set -e
+
+          INDEX_FILE="$PROJECT_DIR/app/src/main/assets/index.html"
+
+          if [ ! -f "$INDEX_FILE" ]; then
+            echo "ERROR: index.html not found:"
+            echo "$INDEX_FILE"
+            exit 1
+          fi
+
+          echo "INDEX_FILE=$INDEX_FILE" >> "$GITHUB_ENV"
+
+          echo "index.html found:"
+          ls -lh "$INDEX_FILE"
+
+
+      # ==================================================
+      # 10. APPLY RESET ALL DATA FIX
       # ==================================================
       - name: Apply Reset All Data Fix
         shell: bash
@@ -198,21 +195,6 @@ jobs:
           echo "=========================================="
           echo "APPLYING RESET ALL DATA FIX"
           echo "=========================================="
-
-          INDEX_FILE="$(
-            find taxi_source \
-              -type f \
-              -path "*/app/src/main/assets/index.html" \
-              -print -quit
-          )"
-
-          if [ -z "$INDEX_FILE" ]; then
-            echo "ERROR: index.html not found."
-            exit 1
-          fi
-
-          echo "Reset fix target:"
-          echo "$INDEX_FILE"
 
           python3 - "$INDEX_FILE" <<'PY'
           import sys
@@ -240,7 +222,7 @@ jobs:
           if old not in s:
               raise SystemExit(
                   "ERROR: Reset function pattern not found. "
-                  "No changes made."
+                  "Build stopped to prevent an incorrect modification."
               )
 
           s = s.replace(old, new, 1)
@@ -248,12 +230,12 @@ jobs:
           with open(path, "w", encoding="utf-8") as f:
               f.write(s)
 
-          print("SUCCESS: Reset All Data monthly-storage fix applied.")
+          print("RESET FIX APPLIED SUCCESSFULLY.")
           PY
 
 
       # ==================================================
-      # 7.6. VERIFY RESET FIX
+      # 11. VERIFY RESET FIX
       # ==================================================
       - name: Verify Reset Fix
         shell: bash
@@ -261,105 +243,32 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "VERIFYING RESET FIX"
+          echo "VERIFY RESET FIX"
           echo "=========================================="
 
-          INDEX_FILE="$(
-            find taxi_source \
-              -type f \
-              -path "*/app/src/main/assets/index.html" \
-              -print -quit
-          )"
+          grep -q "Delete ALL monthly stored trip data" "$INDEX_FILE"
 
-          if [ -z "$INDEX_FILE" ]; then
-            echo "ERROR: index.html not found."
-            exit 1
-          fi
-
-          if grep -q "Delete ALL monthly stored trip data" "$INDEX_FILE"; then
-            echo "RESET FIX: OK"
-          else
-            echo "ERROR: RESET FIX NOT FOUND."
-            exit 1
-          fi
-
-          echo ""
-          echo "Reset All Data fix verified successfully."
+          echo "RESET FIX VERIFIED."
 
 
       # ==================================================
-      # 8. FIND ANDROID PROJECT
+      # 12. FORCE VERSION 111 / 1.1.1
       # ==================================================
-      - name: Find Android project
+      - name: Force Version 1.1.1 Code 111
         shell: bash
         run: |
           set -e
-
-          PROJECT_DIR=""
-
-          SETTINGS_FILE="$(
-            find taxi_source \
-              -type f \
-              \( \
-                -name "settings.gradle" \
-                -o \
-                -name "settings.gradle.kts" \
-              \) \
-              -print -quit
-          )"
-
-          if [ -n "$SETTINGS_FILE" ]; then
-            PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-          fi
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android project not found."
-            exit 1
-          fi
-
-          PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
-
-          echo "=========================================="
-          echo "ANDROID PROJECT FOUND"
-          echo "=========================================="
-
-          echo "$PROJECT_DIR"
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-
-      # ==================================================
-      # 9. FORCE PLAY STORE VERSION
-      # ==================================================
-      - name: Force Version 1.1.1 / Code 111
-        shell: bash
-        run: |
-          set -e
-
-          echo "=========================================="
-          echo "PLAY STORE VERSION"
-          echo "=========================================="
-
-          echo "Version Name: 1.1.1"
-          echo "Version Code: 111"
-          echo "Min SDK: 24"
-          echo "Target SDK: 36"
 
           GRADLE_FILE=""
 
           if [ -f "$PROJECT_DIR/app/build.gradle" ]; then
             GRADLE_FILE="$PROJECT_DIR/app/build.gradle"
-
           elif [ -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
             GRADLE_FILE="$PROJECT_DIR/app/build.gradle.kts"
-
           else
             echo "ERROR: app build.gradle not found."
             exit 1
           fi
-
-          echo "Gradle file:"
-          echo "$GRADLE_FILE"
 
           python3 - "$GRADLE_FILE" <<'PY'
           import sys
@@ -370,21 +279,18 @@ jobs:
           with open(path, "r", encoding="utf-8") as f:
               s = f.read()
 
-          # Version Code
           s = re.sub(
               r'versionCode\s*=?\s*\d+',
               'versionCode 111',
               s
           )
 
-          # Version Name
           s = re.sub(
               r'versionName\s*=?\s*["\'][^"\']*["\']',
               'versionName "1.1.1"',
               s
           )
 
-          # minSdk
           s = re.sub(
               r'minSdkVersion\s+\d+',
               'minSdkVersion 24',
@@ -397,7 +303,6 @@ jobs:
               s
           )
 
-          # targetSdk
           s = re.sub(
               r'targetSdkVersion\s+\d+',
               'targetSdkVersion 36',
@@ -418,15 +323,15 @@ jobs:
 
 
       # ==================================================
-      # 10. VERIFY CONFIGURATION
+      # 13. VERIFY VERSION
       # ==================================================
-      - name: Verify Play Store configuration
+      - name: Verify Version and Target SDK
         shell: bash
         run: |
           set -e
 
           echo "=========================================="
-          echo "FINAL CONFIGURATION"
+          echo "FINAL BUILD CONFIGURATION"
           echo "=========================================="
 
           grep -RniE \
@@ -438,72 +343,14 @@ jobs:
 
           echo ""
           echo "Required:"
-          echo "Version Code = 111"
-          echo "Version Name = 1.1.1"
-          echo "Min SDK = 24"
-          echo "Target SDK = 36"
+          echo "Version Code : 111"
+          echo "Version Name : 1.1.1"
+          echo "Min SDK      : 24"
+          echo "Target SDK   : 36"
 
 
       # ==================================================
-      # 11. VERIFY CUMULATIVE INDEX
-      # ==================================================
-      - name: Verify CUMULATIVE index.html
-        shell: bash
-        run: |
-          set -e
-
-          INDEX_FILE="$PROJECT_DIR/app/src/main/assets/index.html"
-
-          echo "=========================================="
-          echo "VERIFY CUMULATIVE INDEX"
-          echo "=========================================="
-
-          if [ ! -f "$INDEX_FILE" ]; then
-            echo "ERROR: index.html not found."
-            exit 1
-          fi
-
-          ls -lh "$INDEX_FILE"
-
-          echo ""
-          echo "CUMULATIVE MODE:"
-          echo "No automatic monthly deletion is performed."
-          echo "No automatic monthly reset is performed."
-
-          echo ""
-          echo "RESET ALL DATA:"
-          echo "Monthly stored data will be deleted by Reset All Data."
-
-
-      # ==================================================
-      # 12. VERIFY PROJECT
-      # ==================================================
-      - name: Verify project files
-        shell: bash
-        run: |
-          set -e
-
-          echo "=========================================="
-          echo "PROJECT FILES"
-          echo "=========================================="
-
-          find "$PROJECT_DIR" \
-            -maxdepth 6 \
-            -type f \
-            \( \
-              -name "build.gradle" \
-              -o \
-              -name "build.gradle.kts" \
-              -o \
-              -name "settings.gradle" \
-              -o \
-              -name "settings.gradle.kts" \
-            \) \
-            -print
-
-
-      # ==================================================
-      # 13. RELEASE KEYSTORE
+      # 14. PREPARE KEYSTORE
       # ==================================================
       - name: Prepare release keystore
         shell: bash
@@ -520,16 +367,13 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > "$GITHUB_WORKSPACE/taxi-release.keystore"
 
-          if [ ! -s "$GITHUB_WORKSPACE/taxi-release.keystore" ]; then
-            echo "ERROR: Keystore is empty."
-            exit 1
-          fi
+          test -s "$GITHUB_WORKSPACE/taxi-release.keystore"
 
           echo "Keystore ready."
 
 
       # ==================================================
-      # 14. CLEAN
+      # 15. CLEAN
       # ==================================================
       - name: Clean project
         shell: bash
@@ -542,33 +386,51 @@ jobs:
 
 
       # ==================================================
-      # 15. BUILD AAB
+      # 16. BUILD AAB
       # ==================================================
       - name: Build Release AAB
         shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -e
 
           cd "$PROJECT_DIR"
 
-          gradle bundleRelease --stacktrace
+          gradle bundleRelease \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/taxi-release.keystore" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
+            --stacktrace
 
 
       # ==================================================
-      # 16. BUILD APK
+      # 17. BUILD APK
       # ==================================================
       - name: Build Release APK
         shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -e
 
           cd "$PROJECT_DIR"
 
-          gradle assembleRelease --stacktrace
+          gradle assembleRelease \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/taxi-release.keystore" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
+            --stacktrace
 
 
       # ==================================================
-      # 17. FIND AAB
+      # 18. FIND AAB
       # ==================================================
       - name: Find AAB
         shell: bash
@@ -585,42 +447,17 @@ jobs:
 
           if [ -z "$AAB" ]; then
             echo "ERROR: AAB not found."
-            find "$PROJECT_DIR" -type f -name "*.aab" -print
             exit 1
           fi
 
-          echo "AAB FOUND:"
-          echo "$AAB"
-
           echo "AAB_FILE=$AAB" >> "$GITHUB_ENV"
 
-
-      # ==================================================
-      # 18. SIGN AAB
-      # ==================================================
-      - name: Sign AAB
-        shell: bash
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -e
-
-          jarsigner \
-            -keystore "$GITHUB_WORKSPACE/taxi-release.keystore" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -keypass "$KEY_PASSWORD" \
-            -sigalg SHA256withRSA \
-            -digestalg SHA-256 \
-            "$AAB_FILE" \
-            "$KEY_ALIAS"
-
-          echo "AAB signed."
+          echo "AAB:"
+          ls -lh "$AAB"
 
 
       # ==================================================
-      # 19. VERIFY AAB
+      # 19. VERIFY AAB SIGNATURE
       # ==================================================
       - name: Verify AAB
         shell: bash
@@ -654,14 +491,13 @@ jobs:
 
           if [ -z "$APK" ]; then
             echo "ERROR: APK not found."
-            find "$PROJECT_DIR" -type f -name "*.apk" -print
             exit 1
           fi
 
-          echo "APK FOUND:"
-          echo "$APK"
-
           echo "APK_FILE=$APK" >> "$GITHUB_ENV"
+
+          echo "APK:"
+          ls -lh "$APK"
 
 
       # ==================================================
@@ -720,7 +556,7 @@ jobs:
 
 
       # ==================================================
-      # 24. PREPARE FINAL FILES
+      # 24. PREPARE OUTPUT
       # ==================================================
       - name: Prepare final release files
         shell: bash
