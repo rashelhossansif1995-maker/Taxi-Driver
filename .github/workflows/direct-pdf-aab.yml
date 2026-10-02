@@ -1,4 +1,4 @@
-name: Taxi Driver 1.1.1 MONTH FIXED - Signed AAB APK
+name: Taxi Driver 1.1.1 CUMULATIVE FINAL
 
 on:
   workflow_dispatch:
@@ -11,13 +11,13 @@ permissions:
 
 jobs:
   build:
-    name: Build Taxi Driver 1.1.1 MONTH FIXED
+    name: Build Taxi Driver 1.1.1 CUMULATIVE
     runs-on: ubuntu-latest
 
     steps:
 
       # ==========================================
-      # 1. CHECKOUT REPOSITORY
+      # 1. CHECKOUT
       # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,113 +34,85 @@ jobs:
 
 
       # ==========================================
-      # 3. SETUP GRADLE
+      # 3. GRADLE
       # ==========================================
-      - name: Setup Gradle 8.10.2
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
 
 
       # ==========================================
-      # 4. FIND ANDROID SDK
+      # 4. ANDROID SDK
       # ==========================================
-      - name: Find Android SDK
-        shell: bash
-        run: |
-          set -e
-
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-
-          SDKMANAGER=""
-
-          if command -v sdkmanager >/dev/null 2>&1; then
-            SDKMANAGER="$(command -v sdkmanager)"
-          fi
-
-          if [ -z "$SDKMANAGER" ] && [ -n "$ANDROID_HOME" ]; then
-            if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-              SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-            fi
-          fi
-
-          if [ -z "$SDKMANAGER" ] && [ -n "$ANDROID_HOME" ]; then
-            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-              -type f \
-              -name sdkmanager \
-              -print -quit 2>/dev/null || true)"
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: Android sdkmanager was not found."
-            exit 1
-          fi
-
-          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-
-          echo "Using:"
-          echo "$SDKMANAGER"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
 
       # ==========================================
-      # 5. INSTALL ANDROID SDK 36
+      # 5. INSTALL SDK 36
       # ==========================================
       - name: Install Android SDK 36
         shell: bash
         run: |
           set -e
 
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          yes | sdkmanager --licenses >/dev/null || true
 
-          "$SDKMANAGER" \
+          sdkmanager \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-          echo "Android SDK 36 ready."
+          echo "Android SDK 36 installed."
 
 
       # ==========================================
-      # 6. FIND NEW MONTH-FIXED SOURCE ZIP
+      # 6. FIND ONLY NEW CUMULATIVE ZIP
       # ==========================================
-      - name: Find NEW MONTH FIXED source
+      - name: Find ONLY CUMULATIVE source ZIP
         shell: bash
         run: |
           set -e
 
           echo "=========================================="
-          echo "SEARCHING FOR NEW MONTH-FIXED SOURCE"
+          echo "SEARCHING ONLY FOR FINAL CUMULATIVE SOURCE"
           echo "=========================================="
 
           ZIP_FILE="$(find . \
             -type f \
-            -name 'Taxi-Driver-1.1.1-FINAL-MONTH-FIXED-SOURCE.zip' \
+            -name 'Taxi-Driver-1.1.1-FINAL-CUMULATIVE-SOURCE.zip' \
             -print -quit)"
 
           if [ -z "$ZIP_FILE" ]; then
             echo ""
-            echo "ERROR: NEW MONTH-FIXED SOURCE ZIP NOT FOUND!"
+            echo "ERROR!"
+            echo "FINAL CUMULATIVE SOURCE ZIP NOT FOUND."
             echo ""
-            echo "Required file:"
-            echo "Taxi-Driver-1.1.1-FINAL-MONTH-FIXED-SOURCE.zip"
+            echo "Required:"
+            echo "Taxi-Driver-1.1.1-FINAL-CUMULATIVE-SOURCE.zip"
             echo ""
-            echo "Repository files:"
-            find . -maxdepth 4 -type f | sort
+            echo "Repository ZIP files:"
+            find . \
+              -type f \
+              -name "*.zip" \
+              -print \
+              | sort
+
             exit 1
           fi
 
           echo ""
-          echo "NEW MONTH-FIXED SOURCE FOUND:"
+          echo "FOUND FINAL CUMULATIVE SOURCE:"
           echo "$ZIP_FILE"
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
 
       # ==========================================
-      # 7. EXTRACT NEW SOURCE
+      # 7. EXTRACT ONLY NEW SOURCE
       # ==========================================
-      - name: Extract NEW MONTH FIXED source
+      - name: Extract CUMULATIVE source
         shell: bash
         run: |
           set -e
@@ -151,7 +123,7 @@ jobs:
           unzip -q "$ZIP_FILE" -d taxi_source
 
           echo "=========================================="
-          echo "NEW SOURCE EXTRACTED"
+          echo "CUMULATIVE SOURCE EXTRACTED"
           echo "=========================================="
 
           find taxi_source -maxdepth 6 -type f | sort
@@ -167,54 +139,26 @@ jobs:
 
           PROJECT_DIR=""
 
-          # Expected project location
-          if [ -f "taxi_source/taxi_work/settings.gradle" ]; then
-            PROJECT_DIR="taxi_source/taxi_work"
+          SETTINGS_FILE="$(find taxi_source \
+            -type f \
+            \( \
+              -name 'settings.gradle' \
+              -o \
+              -name 'settings.gradle.kts' \
+            \) \
+            -print -quit)"
 
-          elif [ -f "taxi_source/taxi_work/settings.gradle.kts" ]; then
-            PROJECT_DIR="taxi_source/taxi_work"
-
-          else
-
-            SETTINGS_FILE="$(find taxi_source \
-              -type f \
-              \( \
-                -name 'settings.gradle' \
-                -o \
-                -name 'settings.gradle.kts' \
-              \) \
-              -print -quit)"
-
-            if [ -n "$SETTINGS_FILE" ]; then
-              PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-            fi
-
+          if [ -n "$SETTINGS_FILE" ]; then
+            PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
           fi
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "ERROR: Android project not found."
-
-            echo ""
-            echo "Gradle files found:"
-            find taxi_source \
-              -type f \
-              \( \
-                -name 'settings.gradle' \
-                -o \
-                -name 'settings.gradle.kts' \
-                -o \
-                -name 'build.gradle' \
-                -o \
-                -name 'build.gradle.kts' \
-              \) \
-              -print
-
             exit 1
           fi
 
           PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
-          echo ""
           echo "ANDROID PROJECT:"
           echo "$PROJECT_DIR"
 
@@ -222,37 +166,9 @@ jobs:
 
 
       # ==========================================
-      # 9. VERIFY 1.1.1
+      # 9. VERIFY INDEX.HTML
       # ==========================================
-      - name: Verify Version 1.1.1
-        shell: bash
-        run: |
-          set -e
-
-          echo "=========================================="
-          echo "VERSION CHECK"
-          echo "=========================================="
-
-          grep -R \
-            -n \
-            -E \
-            "versionCode|versionName|compileSdk|targetSdk" \
-            "$PROJECT_DIR/app" \
-            --include="*.gradle" \
-            --include="*.gradle.kts" \
-            2>/dev/null || true
-
-          echo ""
-          echo "EXPECTED:"
-          echo "Version Name: 1.1.1"
-          echo "Version Code: 111"
-          echo "Target SDK: 36"
-
-
-      # ==========================================
-      # 10. CHECK MONTH-FIXED INDEX.HTML
-      # ==========================================
-      - name: Verify MONTH FIXED index.html
+      - name: Verify CUMULATIVE index.html
         shell: bash
         run: |
           set -e
@@ -260,27 +176,50 @@ jobs:
           INDEX_FILE="$PROJECT_DIR/app/src/main/assets/index.html"
 
           if [ ! -f "$INDEX_FILE" ]; then
-            echo "ERROR: index.html not found!"
+            echo "ERROR: index.html not found."
             exit 1
           fi
 
           echo "=========================================="
-          echo "INDEX.HTML FOUND"
+          echo "FINAL CUMULATIVE index.html FOUND"
           echo "=========================================="
 
           ls -lh "$INDEX_FILE"
 
           echo ""
-          echo "Checking source..."
+          echo "Checking monthly filter..."
 
           if grep -q "startsWith(ms)" "$INDEX_FILE"; then
-            echo "WARNING: old monthly filter detected."
-          else
-            echo "Old startsWith(ms) filter not detected."
+            echo "ERROR: OLD MONTHLY FILTER STILL EXISTS!"
+            echo "Build stopped."
+            exit 1
           fi
 
-          echo ""
-          echo "index.html verification complete."
+          echo "OK: OLD MONTHLY FILTER NOT FOUND."
+
+
+      # ==========================================
+      # 10. VERIFY PROJECT
+      # ==========================================
+      - name: Verify project files
+        shell: bash
+        run: |
+          set -e
+
+          echo "Gradle files:"
+          find "$PROJECT_DIR" \
+            -maxdepth 4 \
+            -type f \
+            \( \
+              -name "build.gradle" \
+              -o \
+              -name "build.gradle.kts" \
+              -o \
+              -name "settings.gradle" \
+              -o \
+              -name "settings.gradle.kts" \
+            \) \
+            -print
 
 
       # ==========================================
@@ -302,15 +241,15 @@ jobs:
             > "$GITHUB_WORKSPACE/taxi-release.keystore"
 
           if [ ! -s "$GITHUB_WORKSPACE/taxi-release.keystore" ]; then
-            echo "ERROR: Keystore file is empty."
+            echo "ERROR: Keystore is empty."
             exit 1
           fi
 
-          echo "Release keystore prepared."
+          echo "Keystore ready."
 
 
       # ==========================================
-      # 12. CLEAN PROJECT
+      # 12. CLEAN
       # ==========================================
       - name: Clean project
         shell: bash
@@ -332,10 +271,6 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "=========================================="
-          echo "BUILDING RELEASE AAB"
-          echo "=========================================="
-
           gradle bundleRelease --stacktrace
 
 
@@ -349,33 +284,31 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "=========================================="
-          echo "BUILDING RELEASE APK"
-          echo "=========================================="
-
           gradle assembleRelease --stacktrace
 
 
       # ==========================================
-      # 15. CHECK BUILD FILES
+      # 15. FIND AAB
       # ==========================================
-      - name: Check build outputs
+      - name: Find AAB
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo "BUILD OUTPUTS"
-          echo "=========================================="
-
-          find "$PROJECT_DIR" \
+          AAB="$(find "$PROJECT_DIR" \
             -type f \
-            \( \
-              -name "*.aab" \
-              -o \
-              -name "*.apk" \
-            \) \
-            -exec ls -lh {} \;
+            -name "app-release.aab" \
+            -print -quit)"
+
+          if [ -z "$AAB" ]; then
+            echo "ERROR: AAB not found."
+            exit 1
+          fi
+
+          echo "AAB FOUND:"
+          echo "$AAB"
+
+          echo "AAB_FILE=$AAB" >> "$GITHUB_ENV"
 
 
       # ==========================================
@@ -390,71 +323,77 @@ jobs:
         run: |
           set -e
 
-          AAB="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
-
-          if [ ! -f "$AAB" ]; then
-            echo "ERROR: app-release.aab not found!"
-            exit 1
-          fi
-
           jarsigner \
             -keystore "$GITHUB_WORKSPACE/taxi-release.keystore" \
             -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" \
             -sigalg SHA256withRSA \
             -digestalg SHA-256 \
-            "$AAB" \
+            "$AAB_FILE" \
             "$KEY_ALIAS"
 
-          echo "AAB signed successfully."
+          echo "AAB signed."
 
 
       # ==========================================
       # 17. VERIFY AAB
       # ==========================================
-      - name: Verify AAB signature
+      - name: Verify AAB
         shell: bash
         run: |
           set -e
-
-          AAB="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
 
           jarsigner \
             -verify \
             -verbose \
             -certs \
-            "$AAB"
+            "$AAB_FILE"
 
           echo "AAB signature verified."
 
 
       # ==========================================
-      # 18. ALIGN APK
+      # 18. FIND APK
+      # ==========================================
+      - name: Find APK
+        shell: bash
+        run: |
+          set -e
+
+          APK="$(find "$PROJECT_DIR" \
+            -type f \
+            -name "app-release-unsigned.apk" \
+            -print -quit)"
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: unsigned APK not found."
+            exit 1
+          fi
+
+          echo "APK FOUND:"
+          echo "$APK"
+
+          echo "APK_FILE=$APK" >> "$GITHUB_ENV"
+
+
+      # ==========================================
+      # 19. ALIGN APK
       # ==========================================
       - name: Align APK
         shell: bash
         run: |
           set -e
 
-          UNSIGNED_APK="$PROJECT_DIR/app/build/outputs/apk/release/app-release-unsigned.apk"
-
-          if [ ! -f "$UNSIGNED_APK" ]; then
-            echo "ERROR: unsigned APK not found!"
-            exit 1
-          fi
-
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
             -f \
             -p \
             4 \
-            "$UNSIGNED_APK" \
+            "$APK_FILE" \
             "$GITHUB_WORKSPACE/taxi-aligned.apk"
-
-          echo "APK aligned."
 
 
       # ==========================================
-      # 19. SIGN APK
+      # 20. SIGN APK
       # ==========================================
       - name: Sign APK
         shell: bash
@@ -470,16 +409,16 @@ jobs:
             --ks-pass "pass:$KEYSTORE_PASSWORD" \
             --ks-key-alias "$KEY_ALIAS" \
             --key-pass "pass:$KEY_PASSWORD" \
-            --out "$GITHUB_WORKSPACE/Taxi-Driver-1.1.1-MONTH-FIXED-SIGNED.apk" \
+            --out "$GITHUB_WORKSPACE/Taxi-Driver-1.1.1-CUMULATIVE-SIGNED.apk" \
             "$GITHUB_WORKSPACE/taxi-aligned.apk"
 
-          echo "APK signed successfully."
+          echo "APK signed."
 
 
       # ==========================================
-      # 20. VERIFY APK
+      # 21. VERIFY APK
       # ==========================================
-      - name: Verify APK signature
+      - name: Verify APK
         shell: bash
         run: |
           set -e
@@ -487,15 +426,15 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
             verify \
             --verbose \
-            "$GITHUB_WORKSPACE/Taxi-Driver-1.1.1-MONTH-FIXED-SIGNED.apk"
+            "$GITHUB_WORKSPACE/Taxi-Driver-1.1.1-CUMULATIVE-SIGNED.apk"
 
           echo "APK signature verified."
 
 
       # ==========================================
-      # 21. PREPARE FINAL RELEASE
+      # 22. PREPARE FINAL FILES
       # ==========================================
-      - name: Prepare final release files
+      - name: Prepare final files
         shell: bash
         run: |
           set -e
@@ -503,28 +442,26 @@ jobs:
           rm -rf output
           mkdir -p output
 
-          cp \
-            "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
-            "output/Taxi-Driver-1.1.1-MONTH-FIXED-SIGNED.aab"
+          cp "$AAB_FILE" \
+            "output/Taxi-Driver-1.1.1-CUMULATIVE-SIGNED.aab"
 
-          cp \
-            "$GITHUB_WORKSPACE/Taxi-Driver-1.1.1-MONTH-FIXED-SIGNED.apk" \
-            "output/Taxi-Driver-1.1.1-MONTH-FIXED-SIGNED.apk"
+          cp "$GITHUB_WORKSPACE/Taxi-Driver-1.1.1-CUMULATIVE-SIGNED.apk" \
+            "output/Taxi-Driver-1.1.1-CUMULATIVE-SIGNED.apk"
 
           echo "=========================================="
-          echo "FINAL FILES"
+          echo "FINAL RELEASE FILES"
           echo "=========================================="
 
           ls -lh output/
 
 
       # ==========================================
-      # 22. UPLOAD ARTIFACT
+      # 23. UPLOAD ARTIFACTS
       # ==========================================
-      - name: Upload final AAB and APK
+      - name: Upload AAB and APK
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.1.1-MONTH-FIXED-SIGNED
+          name: Taxi-Driver-1.1.1-CUMULATIVE-SIGNED
           path: output/*
           if-no-files-found: error
           retention-days: 30
