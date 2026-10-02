@@ -1,4 +1,4 @@
-name: Taxi Driver 1.1.1 FINAL CUMULATIVE
+name: Taxi Driver 1.1.1 FINAL
 
 on:
   workflow_dispatch:
@@ -44,15 +44,56 @@ jobs:
 
 
       # ==================================================
-      # 4. ANDROID SDK
+      # 4. ANDROID SDK - MANUAL SETUP
       # ==================================================
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "ANDROID SDK SETUP"
+          echo "=========================================="
+
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          SDKMANAGER=""
+
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          elif command -v sdkmanager >/dev/null 2>&1; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          else
+            echo "ERROR: sdkmanager not found."
+            exit 1
+          fi
+
+          echo "Using sdkmanager:"
+          echo "$SDKMANAGER"
+
+          echo ""
+          echo "Accepting licenses..."
+
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+          echo ""
+          echo "Updating SDK package information..."
+
+          "$SDKMANAGER" --update || true
+
+          echo ""
+          echo "Installing Android SDK packages..."
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+          echo ""
+          echo "Android SDK installation completed."
 
 
       # ==================================================
@@ -64,25 +105,36 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "ANDROID SDK CHECK"
+          echo "ANDROID SDK VERIFICATION"
           echo "=========================================="
 
-          if [ ! -d "$ANDROID_HOME/platforms/android-36" ]; then
-            echo "ERROR: Android 36 platform not found."
+          if [ -d "$ANDROID_HOME/platform-tools" ]; then
+            echo "platform-tools: OK"
+          else
+            echo "ERROR: platform-tools not installed."
             exit 1
           fi
 
-          if [ ! -d "$ANDROID_HOME/build-tools/36.0.0" ]; then
-            echo "ERROR: Build Tools 36.0.0 not found."
+          if [ -d "$ANDROID_HOME/platforms/android-36" ]; then
+            echo "Android 36: OK"
+          else
+            echo "ERROR: Android 36 not installed."
             exit 1
           fi
 
-          echo "Android Platform 36: OK"
-          echo "Build Tools 36.0.0: OK"
+          if [ -d "$ANDROID_HOME/build-tools/36.0.0" ]; then
+            echo "Build Tools 36.0.0: OK"
+          else
+            echo "ERROR: Build Tools 36.0.0 not installed."
+            exit 1
+          fi
+
+          echo ""
+          echo "ANDROID SDK READY."
 
 
       # ==================================================
-      # 6. FIND ONLY THE NEW CUMULATIVE ZIP
+      # 6. FIND ONLY FINAL CUMULATIVE ZIP
       # ==================================================
       - name: Find ONLY FINAL CUMULATIVE ZIP
         shell: bash
@@ -92,21 +144,24 @@ jobs:
           ZIP_FILE="./Taxi-Driver-1.1.1-FINAL-CUMULATIVE-SOURCE.zip"
 
           echo "=========================================="
-          echo "CHECKING SOURCE ZIP"
+          echo "SEARCHING FINAL CUMULATIVE SOURCE"
           echo "=========================================="
 
           if [ ! -f "$ZIP_FILE" ]; then
+
             echo "ERROR: Required source ZIP not found."
             echo ""
-            echo "Required:"
+            echo "Required file:"
             echo "$ZIP_FILE"
             echo ""
             echo "Available ZIP files:"
             find . -type f -name "*.zip" -print | sort
+
             exit 1
           fi
 
-          echo "NEW CUMULATIVE SOURCE FOUND:"
+          echo ""
+          echo "FINAL CUMULATIVE SOURCE FOUND:"
           echo "$ZIP_FILE"
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
@@ -165,7 +220,7 @@ jobs:
           PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
           echo "=========================================="
-          echo "ANDROID PROJECT"
+          echo "ANDROID PROJECT FOUND"
           echo "=========================================="
 
           echo "$PROJECT_DIR"
@@ -182,22 +237,24 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "SETTING PLAY STORE VERSION"
+          echo "PLAY STORE VERSION"
           echo "=========================================="
 
-          echo "Version Name : 1.1.1"
-          echo "Version Code : 111"
-          echo "Min SDK      : 24"
-          echo "Target SDK   : 36"
+          echo "Version Name: 1.1.1"
+          echo "Version Code: 111"
+          echo "Min SDK: 24"
+          echo "Target SDK: 36"
 
           GRADLE_FILE=""
 
           if [ -f "$PROJECT_DIR/app/build.gradle" ]; then
             GRADLE_FILE="$PROJECT_DIR/app/build.gradle"
+
           elif [ -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
             GRADLE_FILE="$PROJECT_DIR/app/build.gradle.kts"
+
           else
-            echo "ERROR: app/build.gradle or app/build.gradle.kts not found."
+            echo "ERROR: app build.gradle not found."
             exit 1
           fi
 
@@ -213,27 +270,21 @@ jobs:
           with open(path, "r", encoding="utf-8") as f:
               s = f.read()
 
-          # ------------------------------------------
-          # versionCode
-          # ------------------------------------------
+          # Version Code
           s = re.sub(
               r'versionCode\s*=?\s*\d+',
               'versionCode 111',
               s
           )
 
-          # ------------------------------------------
-          # versionName
-          # ------------------------------------------
+          # Version Name
           s = re.sub(
               r'versionName\s*=?\s*["\'][^"\']*["\']',
               'versionName "1.1.1"',
               s
           )
 
-          # ------------------------------------------
-          # minSdk / minSdkVersion
-          # ------------------------------------------
+          # minSdk
           s = re.sub(
               r'minSdkVersion\s+\d+',
               'minSdkVersion 24',
@@ -246,9 +297,7 @@ jobs:
               s
           )
 
-          # ------------------------------------------
-          # targetSdk / targetSdkVersion
-          # ------------------------------------------
+          # targetSdk
           s = re.sub(
               r'targetSdkVersion\s+\d+',
               'targetSdkVersion 36',
@@ -264,12 +313,12 @@ jobs:
           with open(path, "w", encoding="utf-8") as f:
               f.write(s)
 
-          print("Gradle version configuration patched.")
+          print("Version configuration updated.")
           PY
 
 
       # ==================================================
-      # 10. VERIFY VERSION CONFIGURATION
+      # 10. VERIFY CONFIGURATION
       # ==================================================
       - name: Verify Play Store configuration
         shell: bash
@@ -277,7 +326,7 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "FINAL PLAY STORE CONFIGURATION"
+          echo "FINAL CONFIGURATION"
           echo "=========================================="
 
           grep -RniE \
@@ -289,10 +338,10 @@ jobs:
 
           echo ""
           echo "Required:"
-          echo "versionCode = 111"
-          echo "versionName = 1.1.1"
-          echo "minSdk = 24"
-          echo "targetSdk = 36"
+          echo "Version Code = 111"
+          echo "Version Name = 1.1.1"
+          echo "Min SDK = 24"
+          echo "Target SDK = 36"
 
 
       # ==================================================
@@ -306,7 +355,7 @@ jobs:
           INDEX_FILE="$PROJECT_DIR/app/src/main/assets/index.html"
 
           echo "=========================================="
-          echo "VERIFY CUMULATIVE APP"
+          echo "VERIFY CUMULATIVE INDEX"
           echo "=========================================="
 
           if [ ! -f "$INDEX_FILE" ]; then
@@ -314,20 +363,16 @@ jobs:
             exit 1
           fi
 
-          echo "index.html found:"
           ls -lh "$INDEX_FILE"
 
           echo ""
-          echo "CUMULATIVE DATA MODE"
-          echo "--------------------"
-          echo "Add Record data is not automatically cleared by this workflow."
-          echo "No monthly reset command is executed."
-          echo "No monthly delete command is executed."
-          echo "Data remains until the application's own reset/clear action is used."
+          echo "CUMULATIVE MODE:"
+          echo "No automatic monthly deletion is performed."
+          echo "No monthly reset command is performed."
 
 
       # ==================================================
-      # 12. VERIFY PROJECT FILES
+      # 12. VERIFY PROJECT
       # ==================================================
       - name: Verify project files
         shell: bash
@@ -335,7 +380,7 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "PROJECT FILE CHECK"
+          echo "PROJECT FILES"
           echo "=========================================="
 
           find "$PROJECT_DIR" \
@@ -354,7 +399,7 @@ jobs:
 
 
       # ==================================================
-      # 13. PREPARE RELEASE KEYSTORE
+      # 13. RELEASE KEYSTORE
       # ==================================================
       - name: Prepare release keystore
         shell: bash
@@ -376,7 +421,7 @@ jobs:
             exit 1
           fi
 
-          echo "Release keystore ready."
+          echo "Keystore ready."
 
 
       # ==================================================
@@ -393,7 +438,7 @@ jobs:
 
 
       # ==================================================
-      # 15. BUILD RELEASE AAB
+      # 15. BUILD AAB
       # ==================================================
       - name: Build Release AAB
         shell: bash
@@ -406,7 +451,7 @@ jobs:
 
 
       # ==================================================
-      # 16. BUILD RELEASE APK
+      # 16. BUILD APK
       # ==================================================
       - name: Build Release APK
         shell: bash
@@ -435,7 +480,7 @@ jobs:
           )"
 
           if [ -z "$AAB" ]; then
-            echo "ERROR: Release AAB not found."
+            echo "ERROR: AAB not found."
             find "$PROJECT_DIR" -type f -name "*.aab" -print
             exit 1
           fi
@@ -504,7 +549,7 @@ jobs:
           )"
 
           if [ -z "$APK" ]; then
-            echo "ERROR: Release APK not found."
+            echo "ERROR: APK not found."
             find "$PROJECT_DIR" -type f -name "*.apk" -print
             exit 1
           fi
@@ -571,7 +616,7 @@ jobs:
 
 
       # ==================================================
-      # 24. FINAL RELEASE FILES
+      # 24. PREPARE FINAL FILES
       # ==================================================
       - name: Prepare final release files
         shell: bash
