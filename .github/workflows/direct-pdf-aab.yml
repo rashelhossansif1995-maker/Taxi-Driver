@@ -31,7 +31,7 @@ jobs:
 
 
       # ============================================================
-      # 3. GRADLE
+      # 3. GRADLE 8.10.2
       # ============================================================
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -90,7 +90,7 @@ jobs:
 
 
       # ============================================================
-      # 6. FIND TAXI DRIVER 1.1.1 SOURCE ZIP
+      # 6. FIND SOURCE ZIP
       # ============================================================
       - name: Find Taxi Driver 1.1.1 Source ZIP
         shell: bash
@@ -99,7 +99,7 @@ jobs:
 
           ZIP_FILE="$(
             find . \
-              -maxdepth 2 \
+              -maxdepth 3 \
               -type f \
               -name "*.zip" \
               \( \
@@ -116,7 +116,7 @@ jobs:
 
             echo ""
             echo "Available ZIP files:"
-            find . -maxdepth 3 -type f -name "*.zip" -print | sort
+            find . -maxdepth 4 -type f -name "*.zip" -print | sort
 
             exit 1
           fi
@@ -169,7 +169,7 @@ jobs:
 
             echo ""
             echo "Project files:"
-            find taxi_source -maxdepth 6 -type f | sort | head -n 250
+            find taxi_source -maxdepth 7 -type f | sort | head -n 300
 
             exit 1
           fi
@@ -207,6 +207,8 @@ jobs:
           if [ -z "$INDEX_FILE" ] || [ ! -f "$INDEX_FILE" ]; then
             echo "ERROR: index.html not found."
 
+            echo ""
+            echo "Searching for index.html:"
             find "$PROJECT_DIR" \
               -type f \
               -name "index.html" \
@@ -458,23 +460,16 @@ jobs:
 
 
       # ============================================================
-      # 16. CHECK GRADLE WRAPPER
+      # 16. VERIFY GRADLE
       # ============================================================
-      - name: Prepare Gradle wrapper
+      - name: Verify Gradle
         shell: bash
         run: |
           set -e
 
-          cd "$PROJECT_DIR"
+          gradle --version
 
-          if [ ! -f "./gradlew" ]; then
-            echo "ERROR: gradlew not found."
-            exit 1
-          fi
-
-          chmod +x ./gradlew
-
-          ./gradlew --version
+          echo "GRADLE 8.10.2 READY."
 
 
       # ============================================================
@@ -487,7 +482,7 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          ./gradlew clean --stacktrace
+          gradle clean --stacktrace
 
 
       # ============================================================
@@ -504,7 +499,7 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          ./gradlew bundleRelease \
+          gradle bundleRelease \
             -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/taxi-release.keystore" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
@@ -526,7 +521,7 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          ./gradlew assembleRelease \
+          gradle assembleRelease \
             -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/taxi-release.keystore" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
