@@ -51,10 +51,13 @@ jobs:
 
           if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
             SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
           elif [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
             SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
           elif command -v sdkmanager >/dev/null 2>&1; then
             SDKMANAGER="$(command -v sdkmanager)"
+
           else
             echo "ERROR: sdkmanager not found."
             exit 1
@@ -90,41 +93,59 @@ jobs:
 
 
       # ============================================================
-      # 6. FIND SOURCE ZIP
+      # 6. FIND FINAL COMMISSION SLAB FIX SOURCE ZIP
       # ============================================================
-      - name: Find Taxi Driver 1.1.1 Source ZIP
+      - name: Find Final Commission Slab Fix Source ZIP
         shell: bash
         run: |
           set -e
 
+          echo "============================================"
+          echo "SEARCHING FINAL COMMISSION SLAB FIX SOURCE"
+          echo "============================================"
+
           ZIP_FILE="$(
             find . \
-              -maxdepth 3 \
+              -maxdepth 4 \
               -type f \
               -name "*.zip" \
-              \( \
-                -iname "*Taxi*Driver*1.1.1*" \
-                -o \
-                -iname "*1.1.1*FINAL*CUMULATIVE*" \
-              \) \
+              -iname "*1.1.1*COMMISSION*SLAB*FIX*" \
               -print \
               | head -n 1
           )"
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Taxi Driver 1.1.1 source ZIP not found."
+            ZIP_FILE="$(
+              find . \
+                -maxdepth 4 \
+                -type f \
+                -name "Taxi-Driver-1.1.1-FINAL-CUMULATIVE-SOURCE-COMMISSION-SLAB-FIX.zip" \
+                -print \
+                | head -n 1
+            )"
+          fi
 
+          if [ -z "$ZIP_FILE" ]; then
+            echo ""
+            echo "ERROR: FINAL COMMISSION SLAB FIX SOURCE ZIP NOT FOUND."
+            echo ""
+            echo "Required ZIP:"
+            echo "Taxi-Driver-1.1.1-FINAL-CUMULATIVE-SOURCE-COMMISSION-SLAB-FIX.zip"
             echo ""
             echo "Available ZIP files:"
-            find . -maxdepth 4 -type f -name "*.zip" -print | sort
+            find . -maxdepth 5 -type f -name "*.zip" -print | sort
 
             exit 1
           fi
 
           echo "SOURCE_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
 
-          echo "SOURCE ZIP FOUND:"
+          echo ""
+          echo "FINAL SOURCE ZIP SELECTED:"
           echo "$ZIP_FILE"
+          echo ""
+
+          ls -lh "$ZIP_FILE"
 
 
       # ============================================================
@@ -209,6 +230,7 @@ jobs:
 
             echo ""
             echo "Searching for index.html:"
+
             find "$PROJECT_DIR" \
               -type f \
               -name "index.html" \
@@ -224,7 +246,54 @@ jobs:
 
 
       # ============================================================
-      # 10. APPLY RESET ALL DATA FIX
+      # 10. VERIFY FINAL COMMISSION SLAB LOGIC
+      # ============================================================
+      - name: Verify Final Commission Slab Logic
+        shell: bash
+        run: |
+          set -e
+
+          echo "============================================"
+          echo "VERIFYING COMMISSION SLAB LOGIC"
+          echo "============================================"
+
+          python3 - "$INDEX_FILE" <<'PY'
+          import sys
+
+          path = sys.argv[1]
+
+          with open(path, "r", encoding="utf-8") as f:
+              source = f.read()
+
+          required = [
+              "function commissionRateForCleanMoney(cleanMoney)",
+              "if(amount>=from && amount<=to)return",
+              "const avgCommission=dutyDays?monthClean/dutyDays:0;",
+              "const monthRate=commissionRateForCleanMoney(avgCommission);",
+              "mr.textContent=monthRate.toFixed(2)+'%'"
+          ]
+
+          missing = [x for x in required if x not in source]
+
+          if missing:
+              print("ERROR: Required Commission Slab logic is missing:")
+
+              for item in missing:
+                  print(" - " + item)
+
+              raise SystemExit(1)
+
+          print("COMMISSION SLAB LOGIC VERIFIED.")
+          print("")
+          print("Monthly Clean Money / Duty Days")
+          print("        -> Average Commission/Day")
+          print("        -> Commission Slab")
+          print("        -> Commission %")
+          PY
+
+
+      # ============================================================
+      # 11. APPLY RESET ALL DATA FIX
       # ============================================================
       - name: Apply Reset All Data Fix
         shell: bash
@@ -244,7 +313,6 @@ jobs:
           with open(path, "r", encoding="utf-8") as f:
               source = f.read()
 
-          # Find performResetAll()
           pattern = r'function\s+performResetAll\s*\(\s*\)\s*\{'
 
           match = re.search(pattern, source)
@@ -255,7 +323,6 @@ jobs:
                   "Build stopped to prevent incorrect modification."
               )
 
-          # Prevent duplicate modification
           if "RESET_MONTHLY_STORAGE_FIX" in source:
               print("RESET FIX ALREADY EXISTS.")
               sys.exit(0)
@@ -293,7 +360,7 @@ jobs:
 
 
       # ============================================================
-      # 11. VERIFY RESET FIX
+      # 12. VERIFY RESET FIX
       # ============================================================
       - name: Verify Reset All Data Fix
         shell: bash
@@ -308,7 +375,7 @@ jobs:
 
 
       # ============================================================
-      # 12. FIND GRADLE FILE
+      # 13. FIND GRADLE FILE
       # ============================================================
       - name: Find Gradle file
         shell: bash
@@ -333,7 +400,7 @@ jobs:
 
 
       # ============================================================
-      # 13. SET VERSION 1.1.1 / CODE 111
+      # 14. SET VERSION 1.1.1 / CODE 111
       # ============================================================
       - name: Set Version 1.1.1
         shell: bash
@@ -349,7 +416,6 @@ jobs:
           with open(path, "r", encoding="utf-8") as f:
               source = f.read()
 
-          # versionCode
           source = re.sub(
               r'versionCode\s*(?:=)?\s*\d+',
               'versionCode 111',
@@ -357,7 +423,6 @@ jobs:
               count=1
           )
 
-          # versionName
           source = re.sub(
               r'versionName\s*(?:=)?\s*["\'][^"\']*["\']',
               'versionName "1.1.1"',
@@ -365,7 +430,6 @@ jobs:
               count=1
           )
 
-          # targetSdkVersion
           source = re.sub(
               r'targetSdkVersion\s*(?:=)?\s*\d+',
               'targetSdkVersion 36',
@@ -373,7 +437,6 @@ jobs:
               count=1
           )
 
-          # targetSdk
           source = re.sub(
               r'targetSdk\s*(?:=)?\s*\d+',
               'targetSdk 36',
@@ -381,7 +444,6 @@ jobs:
               count=1
           )
 
-          # minSdkVersion
           source = re.sub(
               r'minSdkVersion\s*(?:=)?\s*\d+',
               'minSdkVersion 24',
@@ -389,7 +451,6 @@ jobs:
               count=1
           )
 
-          # minSdk
           source = re.sub(
               r'minSdk\s*(?:=)?\s*\d+',
               'minSdk 24',
@@ -409,7 +470,7 @@ jobs:
 
 
       # ============================================================
-      # 14. VERIFY VERSION
+      # 15. VERIFY VERSION
       # ============================================================
       - name: Verify Version and SDK
         shell: bash
@@ -434,7 +495,7 @@ jobs:
 
 
       # ============================================================
-      # 15. PREPARE KEYSTORE
+      # 16. PREPARE KEYSTORE
       # ============================================================
       - name: Prepare release keystore
         shell: bash
@@ -460,7 +521,7 @@ jobs:
 
 
       # ============================================================
-      # 16. VERIFY GRADLE
+      # 17. VERIFY GRADLE
       # ============================================================
       - name: Verify Gradle
         shell: bash
@@ -473,7 +534,7 @@ jobs:
 
 
       # ============================================================
-      # 17. CLEAN PROJECT
+      # 18. CLEAN PROJECT
       # ============================================================
       - name: Clean project
         shell: bash
@@ -486,7 +547,7 @@ jobs:
 
 
       # ============================================================
-      # 18. BUILD RELEASE AAB
+      # 19. BUILD RELEASE AAB
       # ============================================================
       - name: Build Release AAB
         shell: bash
@@ -508,7 +569,7 @@ jobs:
 
 
       # ============================================================
-      # 19. BUILD RELEASE APK
+      # 20. BUILD RELEASE APK
       # ============================================================
       - name: Build Release APK
         shell: bash
@@ -530,7 +591,7 @@ jobs:
 
 
       # ============================================================
-      # 20. FIND AAB
+      # 21. FIND AAB
       # ============================================================
       - name: Find AAB
         shell: bash
@@ -558,7 +619,7 @@ jobs:
 
 
       # ============================================================
-      # 21. VERIFY AAB
+      # 22. VERIFY AAB
       # ============================================================
       - name: Verify AAB signature
         shell: bash
@@ -575,7 +636,7 @@ jobs:
 
 
       # ============================================================
-      # 22. FIND APK
+      # 23. FIND APK
       # ============================================================
       - name: Find APK
         shell: bash
@@ -603,7 +664,7 @@ jobs:
 
 
       # ============================================================
-      # 23. ALIGN APK
+      # 24. ALIGN APK
       # ============================================================
       - name: Align APK
         shell: bash
@@ -621,7 +682,7 @@ jobs:
 
 
       # ============================================================
-      # 24. SIGN APK
+      # 25. SIGN APK
       # ============================================================
       - name: Sign APK
         shell: bash
@@ -644,7 +705,7 @@ jobs:
 
 
       # ============================================================
-      # 25. VERIFY APK
+      # 26. VERIFY APK
       # ============================================================
       - name: Verify APK signature
         shell: bash
@@ -660,7 +721,7 @@ jobs:
 
 
       # ============================================================
-      # 26. PREPARE FINAL OUTPUT
+      # 27. PREPARE FINAL OUTPUT
       # ============================================================
       - name: Prepare final release files
         shell: bash
@@ -685,7 +746,7 @@ jobs:
 
 
       # ============================================================
-      # 27. UPLOAD AAB + APK
+      # 28. UPLOAD AAB + APK
       # ============================================================
       - name: Upload AAB and APK
         uses: actions/upload-artifact@v4
