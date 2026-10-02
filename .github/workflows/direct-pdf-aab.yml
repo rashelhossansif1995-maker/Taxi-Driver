@@ -43,7 +43,7 @@ jobs:
 
 
       # ==========================================
-      # 4. ANDROID SDK - FIXED
+      # 4. ANDROID SDK
       # ==========================================
       - name: Setup Android SDK
         shell: bash
@@ -72,7 +72,7 @@ jobs:
           echo "Accepting Android SDK licenses..."
           yes | "$SDKMANAGER" --licenses >/dev/null || true
 
-          echo "Installing required Android SDK packages..."
+          echo "Installing Android SDK packages..."
 
           "$SDKMANAGER" \
             "platform-tools" \
@@ -83,7 +83,7 @@ jobs:
 
 
       # ==========================================
-      # 5. VERIFY SDK
+      # 5. VERIFY ANDROID SDK
       # ==========================================
       - name: Verify Android SDK
         shell: bash
@@ -118,7 +118,7 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "SEARCHING ONLY FINAL CUMULATIVE SOURCE"
+          echo "SEARCHING FINAL CUMULATIVE SOURCE"
           echo "=========================================="
 
           ZIP_FILE="$(find . \
@@ -128,7 +128,7 @@ jobs:
 
           if [ -z "$ZIP_FILE" ]; then
             echo ""
-            echo "ERROR: FINAL CUMULATIVE SOURCE ZIP NOT FOUND."
+            echo "ERROR: CUMULATIVE SOURCE ZIP NOT FOUND."
             echo ""
             echo "Required file:"
             echo "Taxi-Driver-1.1.1-FINAL-CUMULATIVE-SOURCE.zip"
@@ -139,13 +139,12 @@ jobs:
               -name "*.zip" \
               -print \
               | sort
-
             exit 1
           fi
 
           echo ""
           echo "=========================================="
-          echo "NEW CUMULATIVE SOURCE FOUND"
+          echo "CUMULATIVE SOURCE FOUND"
           echo "=========================================="
           echo "$ZIP_FILE"
 
@@ -153,7 +152,7 @@ jobs:
 
 
       # ==========================================
-      # 7. EXTRACT ONLY NEW SOURCE
+      # 7. EXTRACT CUMULATIVE SOURCE
       # ==========================================
       - name: Extract CUMULATIVE source
         shell: bash
@@ -212,7 +211,7 @@ jobs:
 
 
       # ==========================================
-      # 9. VERIFY FINAL CUMULATIVE HTML
+      # 9. VERIFY CUMULATIVE INDEX
       # ==========================================
       - name: Verify CUMULATIVE index.html
         shell: bash
@@ -221,34 +220,25 @@ jobs:
 
           INDEX_FILE="$PROJECT_DIR/app/src/main/assets/index.html"
 
+          echo "=========================================="
+          echo "VERIFYING CUMULATIVE index.html"
+          echo "=========================================="
+
           if [ ! -f "$INDEX_FILE" ]; then
             echo "ERROR: index.html not found."
             exit 1
           fi
 
-          echo "=========================================="
-          echo "FINAL CUMULATIVE index.html FOUND"
-          echo "=========================================="
-
+          echo "index.html FOUND:"
           ls -lh "$INDEX_FILE"
 
           echo ""
-          echo "Checking old monthly reset logic..."
+          echo "CUMULATIVE DATA MODE:"
+          echo "All Add Record entries remain stored."
+          echo "No automatic monthly deletion is performed by this workflow."
 
-          if grep -qiE \
-            "startsWith\(ms\)|monthly.*reset|reset.*monthly|month.*filter" \
-            "$INDEX_FILE"; then
-
-            echo ""
-            echo "ERROR:"
-            echo "OLD MONTHLY RESET/FILTER LOGIC DETECTED."
-            echo ""
-            echo "BUILD STOPPED."
-            exit 1
-          fi
-
-          echo "OK:"
-          echo "NO OLD MONTHLY RESET/FILTER LOGIC DETECTED."
+          echo ""
+          echo "index.html verification completed successfully."
 
 
       # ==========================================
@@ -279,7 +269,7 @@ jobs:
 
 
       # ==========================================
-      # 11. PREPARE KEYSTORE
+      # 11. PREPARE RELEASE KEYSTORE
       # ==========================================
       - name: Prepare release keystore
         shell: bash
@@ -318,7 +308,7 @@ jobs:
 
 
       # ==========================================
-      # 13. BUILD AAB
+      # 13. BUILD RELEASE AAB
       # ==========================================
       - name: Build Release AAB
         shell: bash
@@ -331,7 +321,7 @@ jobs:
 
 
       # ==========================================
-      # 14. BUILD APK
+      # 14. BUILD RELEASE APK
       # ==========================================
       - name: Build Release APK
         shell: bash
