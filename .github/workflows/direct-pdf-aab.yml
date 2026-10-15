@@ -18,7 +18,26 @@ jobs:
       - name: Download project files
         uses: actions/checkout@v4
 
-      - name: Locate Taxi Driver Android project
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Locate Taxi Driver project
         id: project
         shell: bash
         run: |
@@ -29,32 +48,36 @@ jobs:
           if [ -f "app/build.gradle" ]; then
             PROJECT_FILE="app/build.gradle"
           else
-            PROJECT_FILE=$(find . -type f \
+            PROJECT_FILE=$(find . \
+              -type f \
               -path '*/app/build.gradle' \
               -not -path '*/build/*' \
               -print -quit || true)
           fi
 
           if [ -z "$PROJECT_FILE" ]; then
-            ZIP_FILE=$(find . -maxdepth 5 -type f \
+            ZIP_FILE=$(find . \
+              -maxdepth 5 \
+              -type f \
               -iname '*Taxi*Driver*.zip' \
               -print -quit || true)
 
             if [ -z "$ZIP_FILE" ]; then
-              echo "ERROR: Project files or Taxi Driver ZIP not found."
+              echo "ERROR: Android project or Taxi Driver ZIP not found."
               exit 1
             fi
 
             mkdir -p extracted-project
             unzip -q "$ZIP_FILE" -d extracted-project
 
-            PROJECT_FILE=$(find extracted-project -type f \
+            PROJECT_FILE=$(find extracted-project \
+              -type f \
               -path '*/app/build.gradle' \
               -print -quit || true)
           fi
 
           if [ -z "$PROJECT_FILE" ]; then
-            echo "ERROR: app/build.gradle was not found."
+            echo "ERROR: app/build.gradle not found."
             exit 1
           fi
 
@@ -64,43 +87,26 @@ jobs:
           test -f "$PROJECT_DIR/build.gradle"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Project directory: $PROJECT_DIR"
+          echo "Project found: $PROJECT_DIR"
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK 36
-        run: |
-          sdkmanager "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
-
-          yes | sdkmanager --licenses >/dev/null || true
-
-      - name: Check project and Android Gradle Plugin
+      - name: Check Android project configuration
         env:
           PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
+        shell: bash
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
 
-          if grep -q "com.android.application.*8.7.3" build.gradle; then
-            sed -i \
-              "s/com.android.application' version '8.7.3'/com.android.application' version '8.9.1'/" \
-              build.gradle
+          if grep -q "version '8.7.3'" build.gradle; then
+            sed -i "s/version '8.7.3'/version '8.9.1'/" build.gradle
           fi
 
-          echo "Android Gradle Plugin configuration:"
+          echo "Root build.gradle:"
           cat build.gradle
 
           echo "App configuration:"
-          grep -E "compileSdk|targetSdk|applicationId|versionCode|versionName" \
+          grep -E \
+            "compileSdk|targetSdk|applicationId|versionCode|versionName" \
             app/build.gradle
 
       - name: Set up Gradle
@@ -114,32 +120,42 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
         run: |
           set -euo pipefail
 
-          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+          for name in \
+            KEYSTORE_BASE64 \
+            KEYSTORE_PASSWORD \
+            KEY_ALIAS \
+            KEY_PASSWORD
+          do
             if [ -z "${!name}" ]; then
               echo "ERROR: GitHub Secret $name is missing."
               exit 1
             fi
           done
 
-      - name: Prepare signing keystore
+      - name: Prepare release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        shell: bash
         run: |
           set -euo pipefail
 
           printf '%s' "$KEYSTORE_BASE64" \
-            | base64 --decode > "$RUNNER_TEMP/taxi-release.keystore"
+            | base64 --decode \
+            > "$RUNNER_TEMP/taxi-release.keystore"
 
           test -s "$RUNNER_TEMP/taxi-release.keystore"
+
           echo "KEYSTORE_FILE=$RUNNER_TEMP/taxi-release.keystore" \
             >> "$GITHUB_ENV"
 
       - name: Build release AAB and APK
         env:
           PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
+        shell: bash
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
@@ -152,10 +168,12 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
+        shell: bash
         run: |
           set -euo pipefail
 
           AAB="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
+
           test -s "$AAB"
 
           jarsigner \
@@ -164,7 +182,8 @@ jobs:
             -keypass:env KEY_PASSWORD \
             -sigalg SHA256withRSA \
             -digestalg SHA-256 \
-            "$AAB" "$KEY_ALIAS"
+            "$AAB" \
+            "$KEY_ALIAS"
 
           jarsigner -verify "$AAB"
 
@@ -174,6 +193,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -182,7 +202,7 @@ jobs:
           BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
 
           if [ ! -f "$UNSIGNED_APK" ]; then
-            echo "ERROR: Unsigned APK was not found."
+            echo "ERROR: Unsigned APK not found."
             find "$PROJECT_DIR/app/build/outputs/apk" \
               -type f -name '*.apk' -print || true
             exit 1
@@ -203,17 +223,20 @@ jobs:
           "$BUILD_TOOLS/apksigner" verify --verbose \
             "$RUNNER_TEMP/Taxi-Driver-Signed.apk"
 
-      - name: Prepare final AAB and APK
+      - name: Prepare output files
         env:
           PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p output
 
-          cp "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
+          cp \
+            "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
             output/Taxi-Driver-1.1.2-Signed.aab
 
-          cp "$RUNNER_TEMP/Taxi-Driver-Signed.apk" \
+          cp \
+            "$RUNNER_TEMP/Taxi-Driver-Signed.apk" \
             output/Taxi-Driver-1.1.2-Signed.apk
 
           ls -lh output
