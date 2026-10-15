@@ -1,4 +1,4 @@
-name: Taxi Driver 1.1.2 - Play Store Build
+name: Taxi Driver - Play Store Build
 
 on:
   workflow_dispatch:
@@ -14,8 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
-      - name: Download project files
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -24,15 +28,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK 36
+      - name: Install Android SDK without setup-android action
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
+
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+
+          SDK_ZIP="$RUNNER_TEMP/commandlinetools.zip"
+
+          curl -fL \
+            "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip" \
+            -o "$SDK_ZIP"
+
+          mkdir -p "$RUNNER_TEMP/android-sdk-temp"
+          unzip -q "$SDK_ZIP" -d "$RUNNER_TEMP/android-sdk-temp"
+
+          rm -rf "$ANDROID_HOME/cmdline-tools/latest"
+          mv "$RUNNER_TEMP/android-sdk-temp/cmdline-tools" \
+             "$ANDROID_HOME/cmdline-tools/latest"
+
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_HOME" --licenses >/dev/null || true
+
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_HOME" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
@@ -48,30 +71,26 @@ jobs:
           if [ -f "app/build.gradle" ]; then
             PROJECT_FILE="app/build.gradle"
           else
-            PROJECT_FILE=$(find . \
-              -type f \
+            PROJECT_FILE=$(find . -type f \
               -path '*/app/build.gradle' \
               -not -path '*/build/*' \
               -print -quit || true)
           fi
 
           if [ -z "$PROJECT_FILE" ]; then
-            ZIP_FILE=$(find . \
-              -maxdepth 5 \
-              -type f \
+            ZIP_FILE=$(find . -maxdepth 5 -type f \
               -iname '*Taxi*Driver*.zip' \
               -print -quit || true)
 
             if [ -z "$ZIP_FILE" ]; then
-              echo "ERROR: Android project or Taxi Driver ZIP not found."
+              echo "ERROR: Taxi Driver project or ZIP not found."
               exit 1
             fi
 
             mkdir -p extracted-project
             unzip -q "$ZIP_FILE" -d extracted-project
 
-            PROJECT_FILE=$(find extracted-project \
-              -type f \
+            PROJECT_FILE=$(find extracted-project -type f \
               -path '*/app/build.gradle' \
               -print -quit || true)
           fi
@@ -87,7 +106,7 @@ jobs:
           test -f "$PROJECT_DIR/build.gradle"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Project found: $PROJECT_DIR"
+          echo "Found project: $PROJECT_DIR"
 
       - name: Check Android project configuration
         env:
@@ -101,10 +120,10 @@ jobs:
             sed -i "s/version '8.7.3'/version '8.9.1'/" build.gradle
           fi
 
-          echo "Root build.gradle:"
+          echo "Root Gradle file:"
           cat build.gradle
 
-          echo "App configuration:"
+          echo "App settings:"
           grep -E \
             "compileSdk|targetSdk|applicationId|versionCode|versionName" \
             app/build.gradle
@@ -173,7 +192,6 @@ jobs:
           set -euo pipefail
 
           AAB="$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab"
-
           test -s "$AAB"
 
           jarsigner \
@@ -182,8 +200,7 @@ jobs:
             -keypass:env KEY_PASSWORD \
             -sigalg SHA256withRSA \
             -digestalg SHA-256 \
-            "$AAB" \
-            "$KEY_ALIAS"
+            "$AAB" "$KEY_ALIAS"
 
           jarsigner -verify "$AAB"
 
@@ -209,8 +226,7 @@ jobs:
           fi
 
           "$BUILD_TOOLS/zipalign" -f -p 4 \
-            "$UNSIGNED_APK" \
-            "$RUNNER_TEMP/taxi-aligned.apk"
+            "$UNSIGNED_APK" "$RUNNER_TEMP/taxi-aligned.apk"
 
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$KEYSTORE_FILE" \
