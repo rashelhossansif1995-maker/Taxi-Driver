@@ -1,4 +1,4 @@
-name: Taxi Driver - Play Store Build
+name: Taxi Driver - Fixed AAB Build
 
 on:
   workflow_dispatch:
@@ -28,87 +28,96 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK without setup-android action
+      - name: Install Android SDK
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p "$ANDROID_HOME/cmdline-tools"
-
-          SDK_ZIP="$RUNNER_TEMP/commandlinetools.zip"
-
           curl -fL \
             "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip" \
-            -o "$SDK_ZIP"
+            -o "$RUNNER_TEMP/sdk.zip"
 
-          mkdir -p "$RUNNER_TEMP/android-sdk-temp"
-          unzip -q "$SDK_ZIP" -d "$RUNNER_TEMP/android-sdk-temp"
+          mkdir -p "$RUNNER_TEMP/sdk"
+          unzip -q "$RUNNER_TEMP/sdk.zip" -d "$RUNNER_TEMP/sdk"
 
           rm -rf "$ANDROID_HOME/cmdline-tools/latest"
-          mv "$RUNNER_TEMP/android-sdk-temp/cmdline-tools" \
+          mv "$RUNNER_TEMP/sdk/cmdline-tools" \
              "$ANDROID_HOME/cmdline-tools/latest"
 
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          yes | "$SDKMANAGER" \
             --sdk_root="$ANDROID_HOME" --licenses >/dev/null || true
 
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            --sdk_root="$ANDROID_HOME" \
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      - name: Locate Taxi Driver project
+      - name: Find the correct Taxi Driver project
         id: project
         shell: bash
         run: |
           set -euo pipefail
 
-          PROJECT_FILE=""
+          PROJECT_DIR=""
 
           if [ -f "app/build.gradle" ]; then
-            PROJECT_FILE="app/build.gradle"
+            PROJECT_DIR="."
           else
-            PROJECT_FILE=$(find . -type f \
-              -path '*/app/build.gradle' \
-              -not -path '*/build/*' \
-              -print -quit || true)
-          fi
+            ZIP_FILE=""
 
-          if [ -z "$PROJECT_FILE" ]; then
-            ZIP_FILE=$(find . -maxdepth 5 -type f \
-              -iname '*Taxi*Driver*.zip' \
-              -print -quit || true)
+            for candidate in \
+              "Taxi-Driver-1.1.2-Merged-Project-FIXED.zip" \
+              "Taxi-Driver-1.1.2-Merged-Project.zip"
+            do
+              if [ -f "$candidate" ]; then
+                ZIP_FILE="$candidate"
+                break
+              fi
+            done
 
             if [ -z "$ZIP_FILE" ]; then
-              echo "ERROR: Taxi Driver project or ZIP not found."
+              echo "ERROR: Correct Taxi Driver ZIP not found."
+              echo "Upload Taxi-Driver-1.1.2-Merged-Project-FIXED.zip"
               exit 1
             fi
 
-            mkdir -p extracted-project
-            unzip -q "$ZIP_FILE" -d extracted-project
+            mkdir -p "$RUNNER_TEMP/taxi-project"
+            unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/taxi-project"
 
-            PROJECT_FILE=$(find extracted-project -type f \
-              -path '*/app/build.gradle' \
+            PROJECT_FILE=$(find "$RUNNER_TEMP/taxi-project" \
+              -type f -path '*/app/build.gradle' \
               -print -quit || true)
-          fi
 
-          if [ -z "$PROJECT_FILE" ]; then
-            echo "ERROR: app/build.gradle not found."
-            exit 1
-          fi
+            if [ -z "$PROJECT_FILE" ]; then
+              echo "ERROR: app/build.gradle not found in ZIP."
+              exit 1
+            fi
 
-          PROJECT_DIR="${PROJECT_FILE%/app/build.gradle}"
+            PROJECT_DIR="${PROJECT_FILE%/app/build.gradle}"
+          fi
 
           test -f "$PROJECT_DIR/settings.gradle"
           test -f "$PROJECT_DIR/build.gradle"
+          test -f "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Found project: $PROJECT_DIR"
 
-      - name: Check Android project configuration
+          echo "Selected project: $PROJECT_DIR"
+
+          grep -n "showPremiumPlans" \
+            "$PROJECT_DIR/app/src/main/java/com/taxidriver/apk/MainActivity.java" \
+            || {
+              echo "ERROR: showPremiumPlans is missing from selected source."
+              exit 1
+            }
+
+      - name: Check Gradle configuration
         env:
           PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
         shell: bash
@@ -120,10 +129,8 @@ jobs:
             sed -i "s/version '8.7.3'/version '8.9.1'/" build.gradle
           fi
 
-          echo "Root Gradle file:"
           cat build.gradle
 
-          echo "App settings:"
           grep -E \
             "compileSdk|targetSdk|applicationId|versionCode|versionName" \
             app/build.gradle
@@ -133,7 +140,7 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Validate signing secrets
+      - name: Check signing secrets
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -150,12 +157,12 @@ jobs:
             KEY_PASSWORD
           do
             if [ -z "${!name}" ]; then
-              echo "ERROR: GitHub Secret $name is missing."
+              echo "ERROR: Missing GitHub Secret: $name"
               exit 1
             fi
           done
 
-      - name: Prepare release keystore
+      - name: Prepare signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         shell: bash
@@ -163,12 +170,11 @@ jobs:
           set -euo pipefail
 
           printf '%s' "$KEYSTORE_BASE64" \
-            | base64 --decode \
-            > "$RUNNER_TEMP/taxi-release.keystore"
+            | base64 --decode > "$RUNNER_TEMP/release.keystore"
 
-          test -s "$RUNNER_TEMP/taxi-release.keystore"
+          test -s "$RUNNER_TEMP/release.keystore"
 
-          echo "KEYSTORE_FILE=$RUNNER_TEMP/taxi-release.keystore" \
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" \
             >> "$GITHUB_ENV"
 
       - name: Build release AAB and APK
@@ -181,12 +187,12 @@ jobs:
 
           gradle --no-daemon clean bundleRelease assembleRelease
 
-      - name: Sign Android App Bundle
+      - name: Sign AAB
         env:
+          PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
         shell: bash
         run: |
           set -euo pipefail
@@ -204,7 +210,7 @@ jobs:
 
           jarsigner -verify "$AAB"
 
-      - name: Align and sign APK
+      - name: Sign APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -214,50 +220,44 @@ jobs:
         run: |
           set -euo pipefail
 
-          APK_DIR="$PROJECT_DIR/app/build/outputs/apk/release"
-          UNSIGNED_APK="$APK_DIR/app-release-unsigned.apk"
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK="$PROJECT_DIR/app/build/outputs/apk/release/app-release-unsigned.apk"
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
 
-          if [ ! -f "$UNSIGNED_APK" ]; then
-            echo "ERROR: Unsigned APK not found."
-            find "$PROJECT_DIR/app/build/outputs/apk" \
-              -type f -name '*.apk' -print || true
-            exit 1
-          fi
+          test -s "$APK"
 
-          "$BUILD_TOOLS/zipalign" -f -p 4 \
-            "$UNSIGNED_APK" "$RUNNER_TEMP/taxi-aligned.apk"
+          "$TOOLS/zipalign" -f -p 4 \
+            "$APK" "$RUNNER_TEMP/aligned.apk"
 
-          "$BUILD_TOOLS/apksigner" sign \
+          "$TOOLS/apksigner" sign \
             --ks "$KEYSTORE_FILE" \
             --ks-pass env:KEYSTORE_PASSWORD \
             --ks-key-alias "$KEY_ALIAS" \
             --key-pass env:KEY_PASSWORD \
             --out "$RUNNER_TEMP/Taxi-Driver-Signed.apk" \
-            "$RUNNER_TEMP/taxi-aligned.apk"
+            "$RUNNER_TEMP/aligned.apk"
 
-          "$BUILD_TOOLS/apksigner" verify --verbose \
+          "$TOOLS/apksigner" verify --verbose \
             "$RUNNER_TEMP/Taxi-Driver-Signed.apk"
 
-      - name: Prepare output files
+      - name: Prepare final files
         env:
           PROJECT_DIR: ${{ steps.project.outputs.project_dir }}
         shell: bash
         run: |
           set -euo pipefail
+
           mkdir -p output
 
           cp \
             "$PROJECT_DIR/app/build/outputs/bundle/release/app-release.aab" \
             output/Taxi-Driver-1.1.2-Signed.aab
 
-          cp \
-            "$RUNNER_TEMP/Taxi-Driver-Signed.apk" \
+          cp "$RUNNER_TEMP/Taxi-Driver-Signed.apk" \
             output/Taxi-Driver-1.1.2-Signed.apk
 
           ls -lh output
 
-      - name: Upload AAB and APK
+      - name: Upload final AAB and APK
         uses: actions/upload-artifact@v4
         with:
           name: Taxi-Driver-1.1.2-AAB-APK
