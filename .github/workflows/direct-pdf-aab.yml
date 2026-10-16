@@ -1,4 +1,4 @@
-name: Taxi Driver 1.1.2 - Play Store AAB APK
+name: Taxi Driver 1.1.2 - Play Store SDK 24
 
 on:
   workflow_dispatch:
@@ -54,18 +54,38 @@ jobs:
           test -f extracted/taxi_work/app/build.gradle
           test -f extracted/taxi_work/app/src/main/assets/index.html
           test -f extracted/taxi_work/app/src/main/AndroidManifest.xml
-          echo "Original project extracted successfully."
 
-      - name: Verify App Version
+      - name: Set Minimum SDK 24 Only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("extracted/taxi_work/app/build.gradle")
+          original = p.read_text()
+          updated, count = re.subn(
+              r'(?m)^(\s*minSdk\s+)23(\s*)$',
+              r'\g<1>24\g<2>',
+              original
+          )
+          if count != 1:
+              raise SystemExit("Expected exactly one minSdk 23 setting")
+          p.write_text(updated)
+          print("Minimum SDK changed from 23 to 24")
+          PY
+
+      - name: Verify App Settings
         shell: bash
         run: |
           set -euo pipefail
           FILE="extracted/taxi_work/app/build.gradle"
           grep -Fq "applicationId 'com.taxidriver.apk'" "$FILE"
+          grep -Eq 'minSdk[[:space:]]+24' "$FILE"
+          grep -Eq 'targetSdk[[:space:]]+36' "$FILE"
           grep -Eq 'versionCode[[:space:]]+112' "$FILE"
           grep -Fq "versionName '1.1.2'" "$FILE"
-          grep -Eq 'targetSdk[[:space:]]+36' "$FILE"
-          echo "Package and version verified."
+          echo "App settings verified."
 
       - name: Prepare Existing Signing Key
         shell: bash
@@ -76,9 +96,8 @@ jobs:
           test -n "$KEYSTORE_BASE64"
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > taxi-release.keystore
           test -s taxi-release.keystore
-          echo "Signing keystore prepared."
 
-      - name: Build Original Release AAB and APK
+      - name: Build Release AAB and APK
         shell: bash
         working-directory: extracted/taxi_work
         run: |
@@ -109,7 +128,6 @@ jobs:
           set -euo pipefail
           jarsigner -verify \
             extracted/taxi_work/app/build/outputs/bundle/release/app-release.aab
-          echo "AAB signature verification completed."
 
       - name: Align and Sign APK
         shell: bash
@@ -135,21 +153,22 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose taxi-signed.apk
-          echo "APK signature verified."
 
       - name: Prepare Final Output
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p output
-          cp extracted/taxi_work/app/build/outputs/bundle/release/app-release.aab output/Taxi-Driver-1.1.2-FINAL-SIGNED.aab
-          cp taxi-signed.apk output/Taxi-Driver-1.1.2-FINAL-SIGNED.apk
+          cp extracted/taxi_work/app/build/outputs/bundle/release/app-release.aab \
+            output/Taxi-Driver-1.1.2-SDK24-FINAL-SIGNED.aab
+          cp taxi-signed.apk \
+            output/Taxi-Driver-1.1.2-SDK24-FINAL-SIGNED.apk
           ls -lh output/
 
       - name: Upload Final AAB and APK
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.1.2-FINAL-SIGNED
+          name: Taxi-Driver-1.1.2-SDK24-FINAL-SIGNED
           path: output/*
           retention-days: 30
           if-no-files-found: error
