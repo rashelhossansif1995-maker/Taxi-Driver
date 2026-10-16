@@ -1,18 +1,22 @@
-name: Taxi Driver 1.1.2 - Original Source AAB APK
+name: Taxi Driver 1.1.2 - Play Store AAB APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build Signed AAB and APK
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -23,42 +27,84 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
-      - name: Install Android SDK
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Install Required Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Extract original source unchanged
+      - name: Extract Original Project
         shell: bash
         run: |
           set -euo pipefail
-          unzip -q "Taxi-Driver-Premium-Popups-Integrated-Source-v1.1.2.zip" -d source
-          test -f source/taxi_work/app/src/main/assets/index.html
-          test -f source/taxi_work/app/build.gradle
 
-      - name: Check original version
+          ZIP_FILE="Taxi-Driver-Premium-Popups-Integrated-Source-v1.1.2.zip"
+
+          test -f "$ZIP_FILE"
+
+          mkdir -p extracted
+          unzip -q "$ZIP_FILE" -d extracted
+
+          test -f extracted/taxi_work/settings.gradle
+          test -f extracted/taxi_work/app/build.gradle
+          test -f extracted/taxi_work/app/src/main/assets/index.html
+          test -f extracted/taxi_work/app/src/main/AndroidManifest.xml
+
+          echo "Original project extracted successfully."
+
+      - name: Verify App Version
         shell: bash
         run: |
-          grep -E 'applicationId|versionCode|versionName|targetSdk' source/taxi_work/app/build.gradle
+          set -euo pipefail
 
-      - name: Prepare original upload key
+          FILE="extracted/taxi_work/app/build.gradle"
+
+          grep -Fq "applicationId 'com.taxidriver.apk'" "$FILE"
+          grep -Eq 'versionCode[[:space:]]+112' "$FILE"
+          grep -Fq "versionName '1.1.2'" "$FILE"
+          grep -Eq 'targetSdk[[:space:]]+36' "$FILE"
+
+          echo "Package and version verified."
+
+      - name: Prepare Existing Signing Key
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > taxi-release.keystore
+
+          test -n "$KEYSTORE_BASE64"
+
+          printf '%s' "$KEYSTORE_BASE64" \
+            | base64 --decode > taxi-release.keystore
+
           test -s taxi-release.keystore
 
-      - name: Build original AAB and APK
-        working-directory: source/taxi_work
-        run: gradle clean bundleRelease assembleRelease --no-daemon
+          echo "Signing keystore prepared."
 
-      - name: Sign Play Store AAB
+      - name: Build Original Release AAB and APK
+        shell: bash
+        working-directory: extracted/taxi_work
+        run: |
+          set -euo pipefail
+
+          gradle clean bundleRelease assembleRelease \
+            --no-daemon \
+            --stacktrace
+
+      - name: Sign Google Play AAB
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -66,16 +112,31 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          jarsigner -keystore taxi-release.keystore \
+
+          AAB="extracted/taxi_work/app/build/outputs/bundle/release/app-release.aab"
+
+          test -f "$AAB"
+
+          jarsigner \
+            -keystore taxi-release.keystore \
             -storepass "$KEYSTORE_PASSWORD" \
             -keypass "$KEY_PASSWORD" \
             -sigalg SHA256withRSA \
             -digestalg SHA-256 \
-            source/taxi_work/app/build/outputs/bundle/release/app-release.aab \
+            "$AAB" \
             "$KEY_ALIAS"
-          jarsigner -verify -strict source/taxi_work/app/build/outputs/bundle/release/app-release.aab
 
-      - name: Sign APK
+      - name: Verify Signed AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jarsigner -verify -strict \
+            extracted/taxi_work/app/build/outputs/bundle/release/app-release.aab
+
+          echo "AAB signature verified."
+
+      - name: Align and Sign APK
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -83,26 +144,55 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 \
-            source/taxi_work/app/build/outputs/apk/release/app-release-unsigned.apk \
+
+          APK="extracted/taxi_work/app/build/outputs/apk/release/app-release-unsigned.apk"
+
+          test -f "$APK"
+
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            -f -p 4 \
+            "$APK" \
             taxi-aligned.apk
+
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
             --ks taxi-release.keystore \
             --ks-pass env:KEYSTORE_PASSWORD \
             --ks-key-alias "$KEY_ALIAS" \
             --key-pass env:KEY_PASSWORD \
-            --out taxi-signed.apk taxi-aligned.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose taxi-signed.apk
+            --out taxi-signed.apk \
+            taxi-aligned.apk
 
-      - name: Prepare final files
+      - name: Verify Signed APK
+        shell: bash
         run: |
-          mkdir -p output
-          cp source/taxi_work/app/build/outputs/bundle/release/app-release.aab output/Taxi-Driver-1.1.2-SIGNED.aab
-          cp taxi-signed.apk output/Taxi-Driver-1.1.2-SIGNED.apk
+          set -euo pipefail
 
-      - name: Upload build files
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+            verify --verbose taxi-signed.apk
+
+          echo "APK signature verified."
+
+      - name: Prepare Final Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p output
+
+          cp \
+            extracted/taxi_work/app/build/outputs/bundle/release/app-release.aab \
+            output/Taxi-Driver-1.1.2-FINAL-SIGNED.aab
+
+          cp \
+            taxi-signed.apk \
+            output/Taxi-Driver-1.1.2-FINAL-SIGNED.apk
+
+          ls -lh output/
+
+      - name: Upload Final AAB and APK
         uses: actions/upload-artifact@v4
         with:
-          name: Taxi-Driver-1.1.2-AAB-APK
+          name: Taxi-Driver-1.1.2-FINAL-SIGNED
           path: output/*
           retention-days: 30
+          if-no-files-found: error
